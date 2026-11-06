@@ -19,8 +19,8 @@ final class TilingController {
     private var minSizes: [WindowRef: Size] = [:]
     /// The same, per app, kept across restarts.
     private var appMinSizes: [String: Size]
-    /// Windows left floating because there was no room for another tile. They are tried
-    /// again on every re-check, so they join as soon as a tile frees up.
+    /// Windows with no tile of their own. Each waits exactly behind a tile (see `Stacking`),
+    /// so nothing overlaps; they are tried again on every re-check and join when a tile frees up.
     private var overflow: Set<WindowRef> = []
     /// Windows already reported as not fitting, so each is logged once, not on every re-check.
     private var reportedOverflow: Set<WindowRef> = []
@@ -153,8 +153,32 @@ final class TilingController {
         log.notice("Restored the window arrangement for \(setup.displays.count) display(s)")
     }
 
+    /// When `defaults write com.priyansh.roost debugState -bool true` is set, writes the tile
+    /// state to ~/Library/Logs/Roost/state.json after every change, for bug reports and tests.
+    private func dumpStateIfEnabled() {
+        guard UserDefaults.standard.bool(forKey: "debugState") else { return }
+        func entry(_ w: WindowRef) -> [String: Any] {
+            var e: [String: Any] = ["app": w.appID, "title": w.tag.title, "pid": Int(w.pid)]
+            if let f = w.frame { e["frame"] = [f.x, f.y, f.w, f.h] }
+            if let target = placed[w] { e["target"] = [target.x, target.y, target.w, target.h] }
+            return e
+        }
+        let displays = Display.all().map { d -> [String: Any] in
+            let state = states[d.key]
+            return ["display": d.name, "visible": [d.visible.x, d.visible.y, d.visible.w, d.visible.h],
+                    "layout": state?.kind.rawValue ?? "", "tiles": (state?.windows ?? []).map(entry)]
+        }
+        let dump: [String: Any] = ["displays": displays, "overflow": overflow.map(entry), "floating": floating.map(entry)]
+        let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Roost")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if let data = try? JSONSerialization.data(withJSONObject: dump, options: [.prettyPrinted, .sortedKeys]) {
+            try? data.write(to: dir.appendingPathComponent("state.json"), options: .atomic)
+        }
+    }
+
     /// Saves where windows are for the current display setup, in memory and on disk.
     private func remember(_ setup: DisplaySetup) {
+        dumpStateIfEnabled()
         let arrangement = states.filter { setup.displays.contains($0.key) }.mapValues(\.windows)
         memory[setup] = arrangement
         var stored = settings.arrangements
@@ -187,16 +211,23 @@ final class TilingController {
         let trimmed = state.trimToFit(in: display.visible, gap: gap, minSizes: mins)
         for window in trimmed {
             overflow.insert(window)
-            placed[window] = nil
             if reportedOverflow.insert(window).inserted {
-                log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
+                log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); stacked behind a tile")
             }
         }
         // A window that has a tile again may be reported again if it later stops fitting.
         reportedOverflow.subtract(state.windows)
         states[display.key] = state
 
-        let targets = state.frames(in: display.visible, gap: gap, minSizes: mins)
+        let tiles = state.frames(in: display.visible, gap: gap, minSizes: mins)
+        let homes = Stacking.homes(for: trimmed, tiles: tiles, minSizes: knownMinimums(for: trimmed))
+        // Windows that fit no tile are centred at their own size: the only case that floats.
+        let extraMins = knownMinimums(for: trimmed)
+        let targets = tiles + trimmed.map { w -> (id: WindowRef, frame: Rect) in
+            if let home = homes[w] { return (w, home) }
+            let min = extraMins[w] ?? .zero, now = w.frame ?? Rect(x: 0, y: 0, w: min.w, h: min.h)
+            return (w, Stacking.centred(Size(w: max(min.w, now.w), h: max(min.h, now.h)), in: display.visible))
+        }
         for target in targets { placed[target.id] = target.frame }
         let moves = targets.filter { target in
             let current = (pass == 0 ? knownFrames[target.id] : nil) ?? target.id.frame
@@ -413,7 +444,22 @@ final class TilingController {
         reconcile()
     }
 
+    /// Brings forward the next window sharing the focused window's tile (the tile's own
+    /// window and any stacked behind it), in a stable order.
+    func cycleStack() {
+        guard let window = WindowRef.focused(), let frame = placed[window] else { return NSSound.beep() }
+        let tiled = states.values.flatMap(\.windows)
+        let group = placed.filter { $0.value.isClose(to: frame, tolerance: 1) }.map(\.key)
+            .sorted { a, b in
+                let ia = tiled.firstIndex(of: a) ?? Int.max, ib = tiled.firstIndex(of: b) ?? Int.max
+                return ia != ib ? ia < ib : a.description < b.description
+            }
+        guard group.count > 1, let i = group.firstIndex(of: window) else { return NSSound.beep() }
+        group[(i + 1) % group.count].focus()
+    }
+
     var tiledCount: Int { states.values.reduce(0) { $0 + $1.count } }
-    var floatingCount: Int { floating.count + overflow.count }
+    var stackedCount: Int { overflow.count }
+    var floatingCount: Int { floating.count }
     var rememberedSetups: Int { settings.arrangements.count }
 }

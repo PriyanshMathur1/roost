@@ -53,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         list.append(.init(keyCode: K.equal, modifiers: HotKeys.ctrlOpt, label: "⌃⌥=  Grow") { c.resize(grow: true) })
         list.append(.init(keyCode: K.minus, modifiers: HotKeys.ctrlOpt, label: "⌃⌥-  Shrink") { c.resize(grow: false) })
         list.append(.init(keyCode: K.f, modifiers: HotKeys.ctrlOpt, label: "⌃⌥F  Float / tile window") { c.toggleFloat() })
+        list.append(.init(keyCode: K.tab, modifiers: HotKeys.ctrlOpt, label: "⌃⌥⇥  Next window in this tile") { c.cycleStack() })
         list.append(.init(keyCode: K.t, modifiers: HotKeys.ctrlOpt, label: "⌃⌥T  Tiling on / off") { c.setEnabled(!c.isEnabled) })
         for (i, kind) in LayoutKind.allCases.enumerated() {
             list.append(.init(keyCode: K.digits[i], modifiers: HotKeys.ctrlOpt, label: "⌃⌥\(i + 1)  \(kind.title)") { c.setLayout(kind) })
@@ -82,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let toggle = item("Tiling", #selector(toggleTiling))
         toggle.state = controller.isEnabled ? .on : .off
         menu.addItem(toggle)
-        menu.addItem(disabled("\(controller.tiledCount) tiled · \(controller.floatingCount) floating"))
+        menu.addItem(disabled("\(controller.tiledCount) tiled · \(controller.stackedCount) stacked · \(controller.floatingCount) floating"))
         let setups = controller.rememberedSetups
         menu.addItem(disabled(setups == 1 ? "Remembers 1 display setup" : "Remembers \(setups) display setups"))
         menu.addItem(.separator())
