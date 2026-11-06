@@ -14,6 +14,9 @@ final class TilingController {
     private let log = Logger(subsystem: "com.priyansh.tessera", category: "tiling")
     private var states: [String: TileState<WindowRef>] = [:]
     private var floating: Set<WindowRef> = []
+    /// The smallest size each window has accepted, learned when a window came out bigger
+    /// than the tile it was given. Only ever grows; forgotten when the window closes.
+    private var minSizes: [WindowRef: Size] = [:]
     private var started = false
 
     init(settings: Settings) {
@@ -47,6 +50,7 @@ final class TilingController {
         let windows = tracker.tileableWindows()
         let present = Set(windows)
         floating.formIntersection(present)
+        minSizes = minSizes.filter { present.contains($0.key) }
 
         // Forget displays that went away (their windows are picked up again below,
         // on whichever display now holds them), and windows that are gone.
@@ -82,11 +86,21 @@ final class TilingController {
         onStateChange?()
     }
 
-    private func apply(_ display: Display, knownFrames: [WindowRef: Rect?] = [:]) {
-        guard let state = states[display.key] else { return }
-        let targets = state.frames(in: display.visible, gap: settings.gap)
+    /// Moves the display's windows to their tiles. A window that comes out bigger than its
+    /// tile has a minimum size; it is remembered, and the tiles are worked out again so the
+    /// room comes from windows that can spare it. If they can't all fit, the newest windows
+    /// are left floating where they are.
+    private func apply(_ display: Display, knownFrames: [WindowRef: Rect?] = [:], pass: Int = 0) {
+        guard var state = states[display.key] else { return }
+        let gap = settings.gap
+        for window in state.trimToFit(in: display.visible, gap: gap, minSizes: minSizes) {
+            log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
+        }
+        states[display.key] = state
+
+        let targets = state.frames(in: display.visible, gap: gap, minSizes: minSizes)
         let moves = targets.filter { target in
-            let current = knownFrames[target.id] ?? target.id.frame
+            let current = (pass == 0 ? knownFrames[target.id] : nil) ?? target.id.frame
             return !(current?.isClose(to: target.frame) ?? false)
         }
         for (pid, group) in Dictionary(grouping: moves, by: { $0.id.pid }) {
@@ -94,6 +108,19 @@ final class TilingController {
                 for move in group { move.id.setFrame(move.frame) }
             }
         }
+
+        var learned = false
+        for move in moves {
+            guard let actual = move.id.frame else { continue }
+            if let size = Size.learnedMinimum(asked: move.frame, got: actual, known: minSizes[move.id]) {
+                minSizes[move.id] = size
+                learned = true
+                log.info("\(move.id.description, privacy: .public) won't go below \(Int(size.w))×\(Int(size.h))")
+            }
+        }
+        // Minimums only grow, so this settles; the cap is a guard against apps that
+        // report a different size each time.
+        if learned && pass < 3 { apply(display, pass: pass + 1) }
     }
 
     private func reapply(displayKey: String) {
@@ -114,14 +141,14 @@ final class TilingController {
 
     func focus(_ direction: Direction) {
         guard let (window, key, display) = focusedTile(),
-              let next = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap)
+              let next = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap, minSizes: minSizes)
         else { return NSSound.beep() }
         next.focus()
     }
 
     func swap(_ direction: Direction) {
         guard let (window, key, display) = focusedTile(),
-              let other = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap),
+              let other = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap, minSizes: minSizes),
               states[key]?.swap(window, other) == true
         else { return NSSound.beep() }
         reapply(displayKey: key)

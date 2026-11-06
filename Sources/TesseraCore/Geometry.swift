@@ -38,6 +38,32 @@ public struct Rect: Equatable, Hashable, CustomStringConvertible, Sendable {
     public var description: String { "(\(Int(x)),\(Int(y)) \(Int(w))x\(Int(h)))" }
 }
 
+/// A width and height in points.
+public struct Size: Equatable, Hashable, Sendable {
+    public var w: Double
+    public var h: Double
+
+    public init(w: Double, h: Double) {
+        self.w = w
+        self.h = h
+    }
+
+    public static let zero = Size(w: 0, h: 0)
+}
+
 public enum Direction: String, CaseIterable, Sendable {
     case left, right, up, down
+}
+
+extension Size {
+    /// The minimum size implied by asking a window for `asked` and getting `got`, when that
+    /// says more than `known`; otherwise nil. A window that comes out a couple of points
+    /// bigger is rounding (text cells, pixel snapping), not a minimum.
+    public static func learnedMinimum(asked: Rect, got: Rect, known: Size?, slack: Double = 2) -> Size? {
+        let before = known ?? .zero
+        var size = before
+        if got.w > asked.w + slack { size.w = max(size.w, got.w) }
+        if got.h > asked.h + slack { size.h = max(size.h, got.h) }
+        return size != before ? size : nil
+    }
 }

@@ -69,17 +69,39 @@ final class WindowTracker {
     /// minimised, not full screen, in apps that aren't hidden.
     func tileableWindows() -> [WindowRef] {
         var result: [WindowRef] = []
+        var skippedNow: Set<WindowRef> = []
         for app in NSWorkspace.shared.runningApplications where Self.isTileable(app) && !app.isHidden {
-            for window in WindowRef.windows(of: app.processIdentifier)
-            where window.isStandard && !window.isMinimized && !window.isFullScreen && window.canMove {
+            for window in WindowRef.windows(of: app.processIdentifier) {
+                if let reason = Self.skipReason(window) {
+                    skippedNow.insert(window)
+                    if !loggedSkips.contains(window) {
+                        log.info("Not tiling \(window.description, privacy: .public): \(reason, privacy: .public)")
+                    }
+                    continue
+                }
                 result.append(window)
                 watchWindow(window)
             }
         }
         // Windows we stopped seeing no longer need their destroy notification.
         watchedWindows.formIntersection(result)
+        loggedSkips = skippedNow
         return result
     }
+
+    /// Why a window isn't tiled, or nil when it should be.
+    static func skipReason(_ window: WindowRef) -> String? {
+        if !window.isStandard {
+            let role = AX.string(window.element, kAXSubroleAttribute) ?? AX.string(window.element, kAXRoleAttribute) ?? "none"
+            return "not a standard window (\(role))"
+        }
+        if window.isMinimized { return "minimised" }
+        if window.isFullScreen { return "full screen" }
+        if !window.canMove { return "can't be moved or resized" }
+        return nil
+    }
+
+    private var loggedSkips: Set<WindowRef> = []
 
     /// Coalesces bursts of events (an app opening five windows) into one re-check.
     func changed(after delay: TimeInterval = 0.06) {

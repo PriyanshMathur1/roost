@@ -202,5 +202,111 @@ test("frames and neighbours via TileState") {
     expect(s.neighbor(of: "a", direction: .left, in: screen, gap: 0) == nil)
 }
 
+// MARK: Minimum sizes
+
+/// The usable area of the MacBook Air 15" this was tested on (menu bar 38 pt, Dock 100 pt).
+let macbook = Rect(x: 0, y: 38, w: 1710, h: 974)
+
+test("Chrome's 500 pt minimum width in four columns (seen on a real screen)") {
+    var mins = [Size](repeating: .zero, count: 4)
+    mins[2] = Size(w: 500, h: 0)
+    let f = Layout.fit(count: 4, in: macbook, kind: .columns, params: LayoutParams(gap: 8, minSizes: mins))
+    expect(f != nil, "should fit")
+    guard let f else { return }
+    expect(f[2].w >= 499, "Chrome got \(f[2].w)")
+    for i in 0..<3 { expect(f[i + 1].minX - f[i].maxX == 8, "gap \(i): \(f)") }
+    expect(f[0].w == f[1].w || abs(f[0].w - f[1].w) <= 1, "the others share equally: \(f)")
+    expect(f[3].maxX == 1702, "\(f)")
+}
+
+test("Chrome's 375 pt minimum height in a four-window stack") {
+    var mins = [Size](repeating: .zero, count: 5)
+    mins[2] = Size(w: 0, h: 375)
+    let f = Layout.fit(count: 5, in: macbook, kind: .main, params: LayoutParams(gap: 8, minSizes: mins))!
+    expect(f[2].h >= 374, "\(f[2])")
+    expect(f[4].maxY == 1004, "stack ends at the bottom: \(f)")
+    for i in 1..<4 { expect(f[i + 1].minY - f[i].maxY == 8, "\(f)") }
+}
+
+test("main window width respects both sides' minimums") {
+    let screen = Rect(x: 0, y: 0, w: 1000, h: 600)
+    // Main ratio wants 0.8 (792 pt) but the stack needs 400.
+    var f = Layout.fit(count: 2, in: screen, kind: .main, params: LayoutParams(gap: 0, mainRatio: 0.8, minSizes: [.zero, Size(w: 400, h: 0)]))!
+    expect(f[1].w >= 399 && f[0].w + f[1].w == 1000, "\(f)")
+    // Main ratio wants 0.2 but main needs 700.
+    f = Layout.fit(count: 2, in: screen, kind: .main, params: LayoutParams(gap: 0, mainRatio: 0.2, minSizes: [Size(w: 700, h: 0), .zero]))!
+    expect(f[0].w >= 699, "\(f)")
+    // Bounds that cross by a fraction of a point must not crash.
+    _ = Layout.fit(count: 2, in: screen, kind: .main, params: LayoutParams(gap: 0, minSizes: [Size(w: 500.4, h: 0), Size(w: 500.4, h: 0)]))
+}
+
+test("fit returns nil when minimums can't fit") {
+    let four500 = [Size](repeating: Size(w: 500, h: 0), count: 4)
+    expect(Layout.fit(count: 4, in: macbook, kind: .columns, params: LayoutParams(gap: 8, minSizes: four500)) == nil)
+    expect(Layout.fit(count: 1, in: macbook, kind: .grid, params: LayoutParams(minSizes: [Size(w: 3000, h: 0)])) == nil)
+    expect(Layout.fit(count: 2, in: macbook, kind: .columns, params: LayoutParams(minSizes: [Size(w: 0, h: 2000), .zero])) == nil, "too tall")
+    expect(Layout.fit(count: 3, in: macbook, kind: .rows, params: LayoutParams(minSizes: [Size(w: 0, h: 600), Size(w: 0, h: 600), .zero])) == nil)
+}
+
+test("fit honours minimums in every layout when they fit") {
+    var state: UInt64 = 0x9E3779B97F4A7C15
+    func random(_ upper: Double) -> Double {
+        state = state &* 6364136223846793005 &+ 1442695040888963407
+        return Double(state >> 11) / Double(1 << 53) * upper
+    }
+    var fitted = 0
+    for _ in 0..<400 {
+        for kind in LayoutKind.allCases {
+            let count = Int(random(6)) + 1
+            let mins = (0..<count).map { _ in Size(w: random(450), h: random(300)) }
+            let params = LayoutParams(gap: 8, mainRatio: 0.3 + random(0.5), weights: (0..<count).map { _ in 0.5 + random(1.5) }, minSizes: mins)
+            guard let f = Layout.fit(count: count, in: macbook, kind: kind, params: params) else { continue }
+            fitted += 1
+            let tag = "\(kind) n=\(count)"
+            expect(f.count == count, tag)
+            for (r, m) in zip(f, mins) {
+                expect(r.w >= m.w - 1 && r.h >= m.h - 1, "\(r) below \(m) \(tag)")
+                expect(r.minX >= 8 && r.maxX <= 1702 && r.minY >= 46 && r.maxY <= 1004, "outside \(r) \(tag)")
+            }
+            for i in f.indices { for j in f.indices where j > i { expect(!overlaps(f[i], f[j]), "overlap \(tag)") } }
+        }
+    }
+    expect(fitted > 1000, "too few random cases fitted to mean anything: \(fitted)")
+}
+
+test("trimToFit takes off the newest windows until the rest fit") {
+    var s = TileState<String>(kind: .columns)
+    for id in ["a", "b", "c", "d"] { s.insert(id) }
+    let mins = ["a": Size(w: 500, h: 0), "b": Size(w: 500, h: 0), "c": Size(w: 500, h: 0), "d": Size(w: 500, h: 0)]
+    expect(!s.fits(in: macbook, gap: 8, minSizes: mins))
+    expect(s.trimToFit(in: macbook, gap: 8, minSizes: mins) == ["d"], "\(s.windows)")
+    expect(s.windows == ["a", "b", "c"] && s.fits(in: macbook, gap: 8, minSizes: mins))
+    // A single window that can't fit stays (it is the only thing on the display).
+    var lone = TileState<String>()
+    lone.insert("big")
+    expect(lone.trimToFit(in: macbook, gap: 8, minSizes: ["big": Size(w: 5000, h: 0)]).isEmpty && lone.count == 1)
+}
+
+test("frames with minimums put the room where it's needed") {
+    var s = TileState<String>(kind: .columns)
+    for id in ["a", "b", "c", "d"] { s.insert(id) }
+    let f = s.frames(in: macbook, gap: 8, minSizes: ["c": Size(w: 500, h: 0)])
+    expect(f[2].id == "c" && f[2].frame.w >= 499, "\(f)")
+}
+
+test("learning a minimum size from what a window became") {
+    let asked = Rect(x: 0, y: 0, w: 417, h: 958)
+    // Chrome came out 500 wide: that's its minimum width; the height was fine.
+    expect(Size.learnedMinimum(asked: asked, got: Rect(x: 0, y: 0, w: 500, h: 958), known: nil) == Size(w: 500, h: 0))
+    // 1–2 pt over is rounding, not a minimum.
+    expect(Size.learnedMinimum(asked: asked, got: Rect(x: 0, y: 0, w: 419, h: 959), known: nil) == nil)
+    // Smaller than asked (a maximum size) teaches nothing about the minimum.
+    expect(Size.learnedMinimum(asked: asked, got: Rect(x: 0, y: 0, w: 300, h: 500), known: nil) == nil)
+    // Known minimums only grow.
+    let known = Size(w: 520, h: 300)
+    expect(Size.learnedMinimum(asked: asked, got: Rect(x: 0, y: 0, w: 500, h: 958), known: known) == nil)
+    expect(Size.learnedMinimum(asked: Rect(x: 0, y: 0, w: 600, h: 200), got: Rect(x: 0, y: 0, w: 600, h: 375), known: known) == Size(w: 520, h: 375))
+}
+
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)

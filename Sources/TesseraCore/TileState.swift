@@ -83,20 +83,40 @@ public struct TileState<ID: Hashable>: Equatable {
         self.mainRatio = mainRatio.clamped(to: LayoutParams.mainRatioRange)
     }
 
-    public func params(gap: Double) -> LayoutParams {
-        LayoutParams(gap: gap, mainRatio: mainRatio, weights: windows.map { weights[$0] ?? 1 })
+    public func params(gap: Double, minSizes: [ID: Size] = [:]) -> LayoutParams {
+        LayoutParams(gap: gap, mainRatio: mainRatio, weights: windows.map { weights[$0] ?? 1 },
+                     minSizes: windows.map { minSizes[$0] ?? .zero })
     }
 
-    /// The frame each tiled window should have on `screen`, in window order.
-    public func frames(in screen: Rect, gap: Double) -> [(id: ID, frame: Rect)] {
-        let rects = Layout.frames(count: windows.count, in: screen, kind: kind, params: params(gap: gap))
+    /// The frame each tiled window should have on `screen`, in window order. Minimum sizes
+    /// are honoured when they all fit; otherwise they are ignored (see `fits`/`trimToFit`).
+    public func frames(in screen: Rect, gap: Double, minSizes: [ID: Size] = [:]) -> [(id: ID, frame: Rect)] {
+        let p = params(gap: gap, minSizes: minSizes)
+        let rects = Layout.fit(count: windows.count, in: screen, kind: kind, params: p)
+            ?? Layout.frames(count: windows.count, in: screen, kind: kind, params: p)
         return Array(zip(windows, rects)).map { (id: $0.0, frame: $0.1) }
     }
 
+    public func fits(in screen: Rect, gap: Double, minSizes: [ID: Size]) -> Bool {
+        Layout.fit(count: windows.count, in: screen, kind: kind, params: params(gap: gap, minSizes: minSizes)) != nil
+    }
+
+    /// Takes windows off the end of the list, newest first, until the rest fit at their
+    /// minimum sizes. One window always stays. Returns the windows taken off.
+    @discardableResult
+    public mutating func trimToFit(in screen: Rect, gap: Double, minSizes: [ID: Size]) -> [ID] {
+        var removed: [ID] = []
+        while windows.count > 1, !fits(in: screen, gap: gap, minSizes: minSizes), let last = windows.last {
+            remove(last)
+            removed.append(last)
+        }
+        return removed
+    }
+
     /// The tiled window next to `id` in `direction`, judged by where the windows sit on `screen`.
-    public func neighbor(of id: ID, direction: Direction, in screen: Rect, gap: Double) -> ID? {
+    public func neighbor(of id: ID, direction: Direction, in screen: Rect, gap: Double, minSizes: [ID: Size] = [:]) -> ID? {
         guard let i = index(of: id) else { return nil }
-        let rects = frames(in: screen, gap: gap).map(\.frame)
+        let rects = frames(in: screen, gap: gap, minSizes: minSizes).map(\.frame)
         return Navigation.neighbor(of: i, direction: direction, frames: rects).map { windows[$0] }
     }
 
