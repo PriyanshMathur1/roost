@@ -1,0 +1,13 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Layout engine tests
+        run: swift run RoostCoreTests
+      - name: Build the app
+        run: swift build -c release --product Roost
