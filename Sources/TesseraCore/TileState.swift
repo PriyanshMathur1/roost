@@ -26,9 +26,11 @@ public struct TileState<ID: Hashable>: Equatable {
     public func index(of id: ID) -> Int? { windows.firstIndex(of: id) }
 
     /// Appends a window. Returns false when it is already tiled or the display is full.
+    /// With `overCapacity`, the cap is left to `trimToFit`, which applies it after taking out
+    /// the windows that can't fit, so those don't use up places.
     @discardableResult
-    public mutating func insert(_ id: ID) -> Bool {
-        guard !contains(id), !isFull else { return false }
+    public mutating func insert(_ id: ID, overCapacity: Bool = false) -> Bool {
+        guard !contains(id), overCapacity || !isFull else { return false }
         windows.append(id)
         return true
     }
@@ -118,22 +120,34 @@ public struct TileState<ID: Hashable>: Equatable {
         Layout.fit(count: list.count, in: screen, kind: kind, params: params(for: list, gap: gap, minSizes: minSizes)) != nil
     }
 
-    /// Keeps as many windows as fit at their minimum sizes. Windows are taken in order and
-    /// each is kept if it still fits alongside the ones kept so far, so one window that can't
-    /// fit (say, too wide for the stack) is skipped without taking later windows with it.
-    /// The first window always stays. Returns the windows taken out, in order.
+    /// Keeps as many windows as fit at their minimum sizes, up to `maxTiles`.
+    ///
+    /// The first (main) window always stays. The others are tried smallest minimum first
+    /// (ties in list order), each kept if it still fits alongside those kept so far. So one
+    /// window that needs a lot of room floats instead of several that need little. The kept
+    /// windows keep their order. Returns the windows taken out, in list order.
     @discardableResult
     public mutating func trimToFit(in screen: Rect, gap: Double, minSizes: [ID: Size]) -> [ID] {
-        guard !fits(in: screen, gap: gap, minSizes: minSizes) else { return [] }
-        var kept: [ID] = []
-        var removed: [ID] = []
-        for id in windows {
-            if kept.isEmpty || fits(kept + [id], in: screen, gap: gap, minSizes: minSizes) {
-                kept.append(id)
-            } else {
-                removed.append(id)
+        guard windows.count > maxTiles || !fits(in: screen, gap: gap, minSizes: minSizes) else { return [] }
+        guard let first = windows.first else { return [] }
+        let floor = minTile
+        let need = { (id: ID) -> Double in
+            let m = minSizes[id] ?? .zero
+            return max(m.w, floor.w) * max(m.h, floor.h)
+        }
+        let candidates = windows.dropFirst().enumerated()
+            .sorted { (need($0.element), $0.offset) < (need($1.element), $1.offset) }
+            .map(\.element)
+        var keep: Set<ID> = [first]
+        var kept: [ID] = [first]
+        for id in candidates where kept.count < maxTiles {
+            let trial = windows.filter { keep.contains($0) || $0 == id }
+            if fits(trial, in: screen, gap: gap, minSizes: minSizes) {
+                keep.insert(id)
+                kept = trial
             }
         }
+        let removed = windows.filter { !keep.contains($0) }
         for id in removed { remove(id) }
         return removed
     }

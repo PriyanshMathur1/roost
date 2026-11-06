@@ -310,19 +310,20 @@ test("learning a minimum size from what a window became") {
 
 // MARK: Minimum tile size
 
-test("minimum tile: the 5-window case from the real screen keeps 3, none below 300 pt") {
+test("minimum tile: the 5-window columns case from the real screen tiles 4, none below 300 pt") {
     // Chrome (500 min), System Settings (723 min), then three TextEdit windows that
     // would otherwise be squeezed to 146 pt.
     var s = TileState<String>(kind: .columns, minTile: Size(w: 300, h: 160))
     for id in ["chrome", "settings", "te1", "te2", "te3"] { s.insert(id) }
     let mins = ["chrome": Size(w: 500, h: 0), "settings": Size(w: 723, h: 0)]
     let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: mins)
-    expect(dropped == ["te2", "te3"], "the two that no longer fit: \(dropped)")
-    expect(s.windows == ["chrome", "settings", "te1"], "\(s.windows)")
+    // Settings needs 723 pt; floating it leaves room for all three TextEdit windows.
+    expect(dropped == ["settings"], "only the biggest floats: \(dropped)")
+    expect(s.windows == ["chrome", "te1", "te2", "te3"], "\(s.windows)")
     let f = s.frames(in: macbook, gap: 8, minSizes: mins)
     expect(f.allSatisfy { $0.frame.w >= 299 }, "\(f)")
-    expect(f[0].frame.w >= 499 && f[1].frame.w >= 722, "\(f)")
-    expect(f[2].frame.maxX == 1702, "fills to the edge: \(f)")
+    expect(f[0].frame.w >= 499, "\(f)")
+    expect(f[3].frame.maxX == 1702, "fills to the edge: \(f)")
 }
 
 test("minimum tile applies to height in rows and stacks") {
@@ -370,6 +371,41 @@ test("trimToFit keeps order and leaves fitting states alone") {
     let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: [1: Size(w: 1500, h: 0)])
     expect(dropped.contains(1) && s.windows.first == 0, "\(dropped) \(s.windows)")
     expect(s.windows == s.windows.sorted(), "order kept: \(s.windows)")
+}
+
+test("windows that can't fit don't use up places under the cap (seen on screen)") {
+    // Cap 6. Settings and Chrome are too big for the stack; the 7th window (t3) should get
+    // one of the places they would have taken.
+    var s = TileState<String>(kind: .main, maxTiles: 6, minTile: Size(w: 300, h: 165))
+    let order = ["te1", "te2", "passwords", "te4", "settings", "chrome", "t3"]
+    for id in order { expect(s.insert(id, overCapacity: true), id) }
+    expect(!s.insert("te1", overCapacity: true), "no duplicates even over capacity")
+    let mins = ["passwords": Size(w: 779, h: 360), "settings": Size(w: 723, h: 470), "chrome": Size(w: 0, h: 375)]
+    let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: mins)
+    expect(!dropped.contains("t3") || s.count == 6, "t3 turned away with room left: kept \(s.windows), dropped \(dropped)")
+    expect(s.count <= 6 && s.fits(in: macbook, gap: 8, minSizes: mins), "\(s.windows)")
+    // Chrome (375 pt tall) fits once the two biggest, Passwords and Settings, float.
+    expect(Set(dropped) == ["passwords", "settings"], "\(dropped)")
+}
+
+test("trimToFit enforces the cap even when everything fits") {
+    var s = TileState<Int>(kind: .columns, maxTiles: 3)
+    for id in 0..<5 { s.insert(id, overCapacity: true) }
+    expect(s.count == 5)
+    expect(s.trimToFit(in: macbook, gap: 8, minSizes: [:]) == [3, 4] && s.windows == [0, 1, 2], "\(s.windows)")
+    expect(!s.insert(9), "plain insert still respects the cap")
+}
+
+test("when not all fit, tile as many as possible (seen on screen after a restart)") {
+    // Passwords is main; Chrome and Settings came first in the stack and, kept in list
+    // order, would leave all four TextEdit windows floating.
+    var s = TileState<String>(kind: .main, maxTiles: 6, minTile: Size(w: 300, h: 165))
+    for id in ["passwords", "chrome", "settings", "t1", "t2", "t3", "t4"] { s.insert(id, overCapacity: true) }
+    let mins = ["passwords": Size(w: 779, h: 360), "settings": Size(w: 723, h: 470), "chrome": Size(w: 0, h: 375)]
+    let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: mins)
+    expect(Set(dropped) == ["chrome", "settings"], "the two biggest float: \(dropped)")
+    expect(s.windows == ["passwords", "t1", "t2", "t3", "t4"], "order kept, main stays: \(s.windows)")
+    expect(s.fits(in: macbook, gap: 8, minSizes: mins))
 }
 
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")

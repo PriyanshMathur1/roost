@@ -81,7 +81,7 @@ final class TilingController {
             .sorted { ($0.1.minX, $0.1.minY) < ($1.1.minX, $1.1.minY) }
         for (window, frame) in newcomers {
             guard let display = Display.containing(x: frame.midX, y: frame.midY, in: displays) else { continue }
-            if !(states[display.key]?.insert(window) ?? false) {
+            if !(states[display.key]?.insert(window, overCapacity: true) ?? false) {
                 log.debug("No room for \(window.description, privacy: .public) on \(display.name, privacy: .public)")
             }
         }
@@ -97,7 +97,8 @@ final class TilingController {
     private func apply(_ display: Display, knownFrames: [WindowRef: Rect?] = [:], pass: Int = 0) {
         guard var state = states[display.key] else { return }
         let gap = settings.gap
-        for window in state.trimToFit(in: display.visible, gap: gap, minSizes: minSizes) {
+        let trimmed = state.trimToFit(in: display.visible, gap: gap, minSizes: minSizes)
+        for window in trimmed {
             overflow.insert(window)
             log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
         }
@@ -125,7 +126,14 @@ final class TilingController {
         }
         // Minimums only grow, so this settles; the cap is a guard against apps that
         // report a different size each time.
-        if learned && pass < 3 { apply(display, pass: pass + 1) }
+        guard learned && pass < 3 else { return }
+        // What was left out was judged with what we knew then. Now that minimums are known,
+        // other windows may have dropped out instead and freed a place: try them again.
+        for window in trimmed {
+            overflow.remove(window)
+            states[display.key]?.insert(window, overCapacity: true)
+        }
+        apply(display, pass: pass + 1)
     }
 
     private func reapply(displayKey: String) {
