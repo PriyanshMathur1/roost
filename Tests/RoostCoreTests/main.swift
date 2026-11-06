@@ -540,5 +540,51 @@ test("several extras share one tile; with no tiles there is nowhere to wait") {
     expect(Stacking.homes(for: ["a"], tiles: [(id: String, frame: Rect)](), minSizes: [:]).isEmpty)
 }
 
+// MARK: Learning minimum sizes safely
+
+test("a size seen only once isn't learned (Claude leaving full screen reported 1694 pt, seen on screen)") {
+    var learner = MinimumLearner<String>()
+    let asked = Rect(x: 1143, y: 529, w: 559, h: 475)
+    expect(learner.observe("claude", asked: asked, got: Rect(x: 8, y: 46, w: 1694, h: 958)) == nil, "one glimpse is not a minimum")
+}
+
+test("the same oversized result seen twice is learned (Chrome's real 500 pt minimum)") {
+    var learner = MinimumLearner<String>()
+    let asked = Rect(x: 0, y: 0, w: 417, h: 958)
+    _ = learner.observe("chrome", asked: asked, got: Rect(x: 0, y: 0, w: 500, h: 958))
+    expect(learner.observe("chrome", asked: asked, got: Rect(x: 0, y: 0, w: 500, h: 958)) == Size(w: 500, h: 0))
+}
+
+test("two different oversized results don't confirm anything; the later one waits for a repeat") {
+    var learner = MinimumLearner<String>()
+    let asked = Rect(x: 0, y: 0, w: 559, h: 475)
+    _ = learner.observe("claude", asked: asked, got: Rect(x: 0, y: 0, w: 1694, h: 958))   // mid-animation
+    expect(learner.observe("claude", asked: asked, got: Rect(x: 0, y: 0, w: 640, h: 475)) == nil, "settling, not confirmed")
+    expect(learner.observe("claude", asked: asked, got: Rect(x: 0, y: 0, w: 640, h: 475)) == Size(w: 640, h: 0), "now confirmed")
+    var other = MinimumLearner<String>()
+    _ = other.observe("x", asked: asked, got: Rect(x: 0, y: 0, w: 900, h: 475))
+    expect(other.observe("x", asked: asked, got: asked) == nil, "it shrank after all: nothing to learn")
+    expect(other.observe("x", asked: asked, got: Rect(x: 0, y: 0, w: 900, h: 475)) == nil, "a fit in between resets the count")
+}
+
+test("an unconfirmed size asks to be checked again, but gives up after three tries") {
+    var learner = MinimumLearner<String>()
+    let asked = Rect(x: 0, y: 0, w: 500, h: 400)
+    expect(!learner.wantsRecheck("x"))
+    for (i, w) in [700.0, 800, 900].enumerated() {
+        _ = learner.observe("x", asked: asked, got: Rect(x: 0, y: 0, w: w, h: 400))
+        expect(learner.wantsRecheck("x") == (i < 2), "try \(i + 1)")
+    }
+}
+
+test("a window that fits no tile floats at its minimum, not at a stale full-screen size (Claude, seen on screen)") {
+    let display = Rect(x: 0, y: 38, w: 1710, h: 974)
+    // Claude needs 600 x 400 but had just left full screen at 1694 pt wide.
+    expect(Stacking.floatingSize(minimum: Size(w: 600, h: 400), current: Size(w: 1694, h: 958), display: display) == Size(w: 600, h: 400))
+    // No minimum on one side: keep its own size there, but no more than 60% of the display.
+    expect(Stacking.floatingSize(minimum: Size(w: 0, h: 600), current: Size(w: 1694, h: 700), display: display) == Size(w: 1026, h: 600))
+    expect(Stacking.floatingSize(minimum: Size(w: 0, h: 600), current: Size(w: 800, h: 700), display: display) == Size(w: 800, h: 600))
+}
+
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)

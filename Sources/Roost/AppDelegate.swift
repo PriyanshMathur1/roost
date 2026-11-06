@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
         controller.onStateChange = { [weak self] in self?.updateIcon() }
+        controller.startDebugCommands()
         registerShortcuts()
         updateIcon()
 

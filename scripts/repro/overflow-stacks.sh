@@ -16,7 +16,7 @@ trap restore EXIT
 pkill -x TextEdit 2>/dev/null || true
 defaults write com.apple.TextEdit AppleWindowTabbingMode -string manual
 sleep 1
-for i in 1 2 3 4 5 6 7 8; do echo "window $i" > "$TMP/w$i.txt"; open -a TextEdit "$TMP/w$i.txt"; sleep 0.6; done
+for i in 1 2 3 4 5 6 7 8; do echo "window $i" > "$TMP/w$i.txt"; open -F -a TextEdit "$TMP/w$i.txt"; sleep 0.6; done
 sleep 4
 python3 - "$HOME/Library/Logs/Roost/state.json" <<'PY'
 import json, sys

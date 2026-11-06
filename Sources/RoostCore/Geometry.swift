@@ -67,3 +67,36 @@ extension Size {
         return size != before ? size : nil
     }
 }
+
+/// Learns a window's minimum size from what it becomes when asked to be smaller, but only
+/// once the same oversized result has been seen twice. A single glimpse can be a window
+/// mid-animation (leaving full screen, restoring from the Dock), not a real minimum.
+public struct MinimumLearner<ID: Hashable> {
+    private var pending: [ID: Size] = [:]
+    private var tries: [ID: Int] = [:]
+    public static var maxTries: Int { 3 }
+
+    public init() {}
+
+    /// True while a size is waiting for confirmation and it's worth asking the window again.
+    public func wantsRecheck(_ id: ID) -> Bool {
+        pending[id] != nil && (tries[id] ?? 0) < Self.maxTries
+    }
+
+    /// Returns a newly confirmed minimum, or nil while it is still unconfirmed.
+    public mutating func observe(_ id: ID, asked: Rect, got: Rect, known: Size? = nil) -> Size? {
+        guard let candidate = Size.learnedMinimum(asked: asked, got: got, known: known) else {
+            pending[id] = nil  // it took the size after all
+            tries[id] = nil
+            return nil
+        }
+        if let previous = pending[id], abs(previous.w - candidate.w) <= 2, abs(previous.h - candidate.h) <= 2 {
+            pending[id] = nil
+            tries[id] = nil
+            return candidate
+        }
+        pending[id] = candidate
+        tries[id, default: 0] += 1
+        return nil
+    }
+}

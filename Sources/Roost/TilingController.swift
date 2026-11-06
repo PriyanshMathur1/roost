@@ -1,6 +1,7 @@
 import AppKit
 import os
 import RoostCore
+import ServiceManagement
 
 /// Keeps one `TileState` per display in step with the windows on screen, and moves
 /// windows to their tiles.
@@ -19,6 +20,8 @@ final class TilingController {
     private var minSizes: [WindowRef: Size] = [:]
     /// The same, per app, kept across restarts.
     private var appMinSizes: [String: Size]
+    /// Confirms a minimum only when the same oversized result comes back twice.
+    private var learner = MinimumLearner<WindowRef>()
     /// Windows with no tile of their own. Each waits exactly behind a tile (see `Stacking`),
     /// so nothing overlaps; they are tried again on every re-check and join when a tile frees up.
     private var overflow: Set<WindowRef> = []
@@ -153,6 +156,39 @@ final class TilingController {
         log.notice("Restored the window arrangement for \(setup.displays.count) display(s)")
     }
 
+    // MARK: Debug commands (only while debugState is on)
+
+    /// Lets test scripts drive real Roost behaviour without a keyboard or mouse:
+    /// `scripts/repro/roostctl <action> [title] [x y]`. Ignored unless debugState is on.
+    func startDebugCommands() {
+        DistributedNotificationCenter.default().addObserver(forName: Notification.Name("com.priyansh.roost.debug"), object: nil, queue: .main) { [weak self] note in
+            guard UserDefaults.standard.bool(forKey: "debugState"), let info = note.userInfo as? [String: String] else { return }
+            MainActor.assumeIsolated { self?.runDebugCommand(info) }
+        }
+    }
+
+    private func runDebugCommand(_ info: [String: String]) {
+        let title = info["title"] ?? ""
+        let all = NSWorkspace.shared.runningApplications.filter(WindowTracker.isTileable).flatMap { WindowRef.windows(of: $0.processIdentifier) }
+        let target = all.first { $0.tag.title == title }
+        log.notice("Debug command \(info["action"] ?? "?", privacy: .public) \(title, privacy: .public)")
+        switch info["action"] {
+        case "minimise":
+            if let w = target { AXUIElementSetAttributeValue(w.element, kAXMinimizedAttribute as CFString, kCFBooleanTrue) }
+        case "restore":
+            if let w = target { AXUIElementSetAttributeValue(w.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse) }
+        case "drop":
+            // Move the window so its centre is at (x, y), as a drag would, then let go there.
+            guard let w = target, let f = w.frame, let x = Double(info["x"] ?? ""), let y = Double(info["y"] ?? "") else { return }
+            w.setFrame(Rect(x: x - f.w / 2, y: y - f.h / 2, w: f.w, h: f.h))
+            dropped(w, pointerOverride: (x, y))
+        case "login-on": try? SMAppService.mainApp.register()
+        case "login-off": try? SMAppService.mainApp.unregister()
+        default: break
+        }
+        tracker.changed(after: 0.3)
+    }
+
     /// When `defaults write com.priyansh.roost debugState -bool true` is set, writes the tile
     /// state to ~/Library/Logs/Roost/state.json after every change, for bug reports and tests.
     private func dumpStateIfEnabled() {
@@ -168,7 +204,15 @@ final class TilingController {
             return ["display": d.name, "visible": [d.visible.x, d.visible.y, d.visible.w, d.visible.h],
                     "layout": state?.kind.rawValue ?? "", "tiles": (state?.windows ?? []).map(entry)]
         }
-        let dump: [String: Any] = ["displays": displays, "overflow": overflow.map(entry), "floating": floating.map(entry)]
+        let login: String
+        switch SMAppService.mainApp.status {
+        case .enabled: login = "enabled"
+        case .requiresApproval: login = "requiresApproval"
+        case .notFound: login = "notFound"
+        default: login = "notRegistered"
+        }
+        let dump: [String: Any] = ["displays": displays, "overflow": overflow.map(entry), "floating": floating.map(entry),
+                                   "openAtLogin": login]
         let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Roost")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         if let data = try? JSONSerialization.data(withJSONObject: dump, options: [.prettyPrinted, .sortedKeys]) {
@@ -226,7 +270,8 @@ final class TilingController {
         let targets = tiles + trimmed.map { w -> (id: WindowRef, frame: Rect) in
             if let home = homes[w] { return (w, home) }
             let min = extraMins[w] ?? .zero, now = w.frame ?? Rect(x: 0, y: 0, w: min.w, h: min.h)
-            return (w, Stacking.centred(Size(w: max(min.w, now.w), h: max(min.h, now.h)), in: display.visible))
+            let size = Stacking.floatingSize(minimum: min, current: Size(w: now.w, h: now.h), display: display.visible)
+            return (w, Stacking.centred(size, in: display.visible))
         }
         for target in targets { placed[target.id] = target.frame }
         let moves = targets.filter { target in
@@ -240,9 +285,12 @@ final class TilingController {
         }
 
         var learned = false
+        var recheck = false
         for move in moves {
             guard let actual = move.id.frame else { continue }
-            if let size = Size.learnedMinimum(asked: move.frame, got: actual, known: mins[move.id]) {
+            let found = learner.observe(move.id, asked: move.frame, got: actual, known: mins[move.id])
+            if learner.wantsRecheck(move.id) { recheck = true }
+            if let size = found {
                 minSizes[move.id] = size
                 let app = appMinSizes[move.id.appID] ?? .zero
                 appMinSizes[move.id.appID] = Size(w: max(app.w, size.w), h: max(app.h, size.h))
@@ -250,6 +298,8 @@ final class TilingController {
                 log.info("\(move.id.description, privacy: .public) won't go below \(Int(size.w))×\(Int(size.h))")
             }
         }
+        // A size seen once may be a window mid-animation: ask again shortly to confirm it.
+        if recheck { tracker.changed(after: 0.6) }
         guard learned else { return }
         settings.appMinSizes = appMinSizes
         // Minimums only grow, so this settles; the cap is a guard against apps that
@@ -304,14 +354,14 @@ final class TilingController {
     /// - on another tile of the same display: the two swap places;
     /// - on another display: it joins that display, at the tile it was dropped on;
     /// - anywhere else: it goes back to its tile.
-    private func dropped(_ window: WindowRef) {
+    private func dropped(_ window: WindowRef, pointerOverride: (Double, Double)? = nil) {
         let displays = Display.all()
         // A display was just plugged in or out: that's a re-arrangement, not a drop.
         guard DisplaySetup(displays.map(\.key)) == lastSetup else { return reconcile() }
         guard let from = states.first(where: { $0.value.contains(window) })?.key,
               let frame = window.frame,
               let to = Display.containing(x: frame.midX, y: frame.midY, in: displays) else { return reconcile() }
-        let pointer = Self.pointerInAXSpace() ?? (frame.midX, frame.midY)
+        let pointer = pointerOverride ?? Self.pointerInAXSpace() ?? (frame.midX, frame.midY)
 
         let gap = settings.gap
         guard let targetState = states[to.key] else { return reconcile() }
