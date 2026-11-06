@@ -6,12 +6,17 @@ public struct TileState<ID: Hashable>: Equatable {
     public private(set) var windows: [ID] = []
     public var kind: LayoutKind
     public var maxTiles: Int
+    /// The smallest tile worth having. Every window is treated as needing at least this
+    /// much, so instead of squeezing a window into a sliver, the newest windows are left
+    /// floating (see `trimToFit`). A lone window is never held to it.
+    public var minTile: Size
     public private(set) var mainRatio: Double
     private var weights: [ID: Double] = [:]
 
-    public init(kind: LayoutKind = .main, maxTiles: Int = 6, mainRatio: Double = 0.6) {
+    public init(kind: LayoutKind = .main, maxTiles: Int = 6, mainRatio: Double = 0.6, minTile: Size = .zero) {
         self.kind = kind
         self.maxTiles = max(maxTiles, 1)
+        self.minTile = minTile
         self.mainRatio = mainRatio.clamped(to: LayoutParams.mainRatioRange)
     }
 
@@ -84,8 +89,12 @@ public struct TileState<ID: Hashable>: Equatable {
     }
 
     public func params(gap: Double, minSizes: [ID: Size] = [:]) -> LayoutParams {
-        LayoutParams(gap: gap, mainRatio: mainRatio, weights: windows.map { weights[$0] ?? 1 },
-                     minSizes: windows.map { minSizes[$0] ?? .zero })
+        let floor = windows.count > 1 ? minTile : .zero
+        return LayoutParams(gap: gap, mainRatio: mainRatio, weights: windows.map { weights[$0] ?? 1 },
+                            minSizes: windows.map { id in
+                                let own = minSizes[id] ?? .zero
+                                return Size(w: max(own.w, floor.w), h: max(own.h, floor.h))
+                            })
     }
 
     /// The frame each tiled window should have on `screen`, in window order. Minimum sizes
@@ -121,7 +130,7 @@ public struct TileState<ID: Hashable>: Equatable {
     }
 
     public static func == (lhs: TileState, rhs: TileState) -> Bool {
-        lhs.windows == rhs.windows && lhs.kind == rhs.kind && lhs.maxTiles == rhs.maxTiles
+        lhs.windows == rhs.windows && lhs.kind == rhs.kind && lhs.maxTiles == rhs.maxTiles && lhs.minTile == rhs.minTile
             && lhs.mainRatio == rhs.mainRatio && lhs.weights == rhs.weights
     }
 }

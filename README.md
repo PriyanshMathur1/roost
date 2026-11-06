@@ -54,7 +54,9 @@ Shortcuts another app already owns are listed as "taken" in the menu.
 
 ## Known limits (v0.1)
 
-- At most 6 tiled windows per display; extra windows float where they open.
-- Windows that refuse to get as small as their tile overlap their neighbours.
+- At most 6 tiled windows per display, and no tile narrower than the **Narrowest Tile** setting
+  (300 pt by default). Windows beyond that float where they open and join when a tile frees up.
+- Windows that won't shrink (Chrome below 500 pt, System Settings below 723 pt) are measured
+  the first time and given the room; the measurements are forgotten when Tessera quits.
 - Dragging a window to another display doesn't move its tile there yet. Float it (⌃⌥F), move it, then tile it again.
 - Windows on other Spaces drop out of the layout and rejoin at the end when you come back.

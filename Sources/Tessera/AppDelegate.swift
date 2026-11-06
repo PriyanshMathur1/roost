@@ -107,6 +107,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let gapItem = NSMenuItem(title: "Gap", action: nil, keyEquivalent: "")
         gapItem.submenu = gapMenu
         menu.addItem(gapItem)
+
+        let tileMenu = NSMenu()
+        for width in Settings.minTileChoices {
+            let entry = item(width == 0 ? "No limit" : "\(Int(width)) pt", #selector(chooseMinTile(_:)))
+            entry.representedObject = width
+            entry.state = width == settings.minTileWidth ? .on : .off
+            tileMenu.addItem(entry)
+        }
+        let tileItem = NSMenuItem(title: "Narrowest Tile", action: nil, keyEquivalent: "")
+        tileItem.submenu = tileMenu
+        menu.addItem(tileItem)
         menu.addItem(item("Re-tile Now", #selector(retile)))
         menu.addItem(item("Reset Sizes", #selector(resetSizes)))
 
@@ -144,6 +155,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func chooseLayout(_ sender: NSMenuItem) {
         guard let pair = sender.representedObject as? [String], let kind = LayoutKind(rawValue: pair[0]) else { return }
         controller.setLayout(kind, displayKey: pair[1])
+    }
+
+    @objc private func chooseMinTile(_ sender: NSMenuItem) {
+        guard let width = sender.representedObject as? Double else { return }
+        controller.setMinTileWidth(width)
     }
 
     @objc private func chooseGap(_ sender: NSMenuItem) {

@@ -308,5 +308,44 @@ test("learning a minimum size from what a window became") {
     expect(Size.learnedMinimum(asked: Rect(x: 0, y: 0, w: 600, h: 200), got: Rect(x: 0, y: 0, w: 600, h: 375), known: known) == Size(w: 520, h: 375))
 }
 
+// MARK: Minimum tile size
+
+test("minimum tile: the 5-window case from the real screen keeps 3, none below 300 pt") {
+    // Chrome (500 min), System Settings (723 min), then three TextEdit windows that
+    // would otherwise be squeezed to 146 pt.
+    var s = TileState<String>(kind: .columns, minTile: Size(w: 300, h: 160))
+    for id in ["chrome", "settings", "te1", "te2", "te3"] { s.insert(id) }
+    let mins = ["chrome": Size(w: 500, h: 0), "settings": Size(w: 723, h: 0)]
+    let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: mins)
+    expect(dropped == ["te3", "te2"], "newest go first: \(dropped)")
+    expect(s.windows == ["chrome", "settings", "te1"], "\(s.windows)")
+    let f = s.frames(in: macbook, gap: 8, minSizes: mins)
+    expect(f.allSatisfy { $0.frame.w >= 299 }, "\(f)")
+    expect(f[0].frame.w >= 499 && f[1].frame.w >= 722, "\(f)")
+    expect(f[2].frame.maxX == 1702, "fills to the edge: \(f)")
+}
+
+test("minimum tile applies to height in rows and stacks") {
+    var s = TileState<Int>(kind: .rows, maxTiles: 10, minTile: Size(w: 300, h: 160))
+    for id in 0..<8 { s.insert(id) }
+    // 958 pt tall: 8 rows would be ~113 pt; at 160 pt + 8 pt gaps only 5 fit.
+    s.trimToFit(in: macbook, gap: 8, minSizes: [:])
+    expect(s.count == 5, "\(s.count)")
+    expect(s.frames(in: macbook, gap: 8).allSatisfy { $0.frame.h >= 159 })
+}
+
+test("a lone window isn't held to the minimum tile") {
+    var s = TileState<String>(minTile: Size(w: 5000, h: 5000))
+    s.insert("only")
+    expect(s.fits(in: macbook, gap: 8, minSizes: [:]))
+    expect(s.frames(in: macbook, gap: 8).first?.frame == macbook.inset(by: 8))
+}
+
+test("no minimum tile means the old behaviour") {
+    var s = TileState<Int>(kind: .columns, maxTiles: 10)
+    for id in 0..<6 { s.insert(id) }
+    expect(s.trimToFit(in: macbook, gap: 8, minSizes: [:]).isEmpty && s.count == 6)
+}
+
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)

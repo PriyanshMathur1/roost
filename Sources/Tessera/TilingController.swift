@@ -17,6 +17,9 @@ final class TilingController {
     /// The smallest size each window has accepted, learned when a window came out bigger
     /// than the tile it was given. Only ever grows; forgotten when the window closes.
     private var minSizes: [WindowRef: Size] = [:]
+    /// Windows left floating because there was no room for another tile. They are tried
+    /// again on every re-check, so they join as soon as a tile frees up.
+    private var overflow: Set<WindowRef> = []
     private var started = false
 
     init(settings: Settings) {
@@ -51,6 +54,7 @@ final class TilingController {
         let present = Set(windows)
         floating.formIntersection(present)
         minSizes = minSizes.filter { present.contains($0.key) }
+        overflow = []
 
         // Forget displays that went away (their windows are picked up again below,
         // on whichever display now holds them), and windows that are gone.
@@ -61,7 +65,7 @@ final class TilingController {
             }
         }
         for display in displays where states[display.key] == nil {
-            states[display.key] = TileState(kind: settings.layout(for: display.key), maxTiles: settings.maxTiles)
+            states[display.key] = TileState(kind: settings.layout(for: display.key), maxTiles: settings.maxTiles, minTile: settings.minTile)
         }
 
         // Add new windows to the display under their centre. On first start, left-to-right,
@@ -94,6 +98,7 @@ final class TilingController {
         guard var state = states[display.key] else { return }
         let gap = settings.gap
         for window in state.trimToFit(in: display.visible, gap: gap, minSizes: minSizes) {
+            overflow.insert(window)
             log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
         }
         states[display.key] = state
@@ -181,7 +186,8 @@ final class TilingController {
         guard let key else { return }
         settings.setLayout(kind, for: key)
         states[key]?.kind = kind
-        reapply(displayKey: key)
+        // Another layout may have room for windows that were left floating.
+        reconcile()
     }
 
     func layout(for displayKey: String) -> LayoutKind {
@@ -193,11 +199,17 @@ final class TilingController {
         reconcile()
     }
 
+    func setMinTileWidth(_ width: Double) {
+        settings.minTileWidth = width
+        for key in states.keys { states[key]!.minTile = settings.minTile }
+        reconcile()
+    }
+
     func setGap(_ gap: Double) {
         settings.gap = gap
         reconcile()
     }
 
     var tiledCount: Int { states.values.reduce(0) { $0 + $1.count } }
-    var floatingCount: Int { floating.count }
+    var floatingCount: Int { floating.count + overflow.count }
 }
