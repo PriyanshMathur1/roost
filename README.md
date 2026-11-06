@@ -1,23 +1,57 @@
-<p align="center"><img src="docs/icon.png" width="128" alt="Roost icon"></p>
+<p align="center"><img src="docs/icon.png" width="120" alt="Roost icon"></p>
 
 <h1 align="center">Roost</h1>
 
-<p align="center"><b>Your windows come home to roost.</b><br>
+<p align="center"><b>Unplug your Mac. Plug back in. Every window goes home.</b><br>
 A free, open-source window tiler for macOS that remembers where everything goes, on every display setup.</p>
+
+<p align="center">
+  <a href="https://github.com/PriyanshMathur1/roost/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/PriyanshMathur1/roost?color=F08A4B&label=release"></a>
+  <a href="https://github.com/PriyanshMathur1/roost/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/PriyanshMathur1/roost/total?color=2B2E6E"></a>
+  <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-2B2E6E">
+  <img alt="Apple Silicon and Intel" src="https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-universal-2B2E6E">
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/license-MIT-F08A4B"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/PriyanshMathur1/roost/releases/latest/download/Roost-0.2.0.zip"><b>⬇ Download for macOS</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/PriyanshMathur1/roost/releases/download/v0.2.0/Roost-launch-video.mp4"><b>▶ Watch the 30-second video</b></a>
+</p>
+
+<p align="center"><img src="docs/demo.gif" width="800" alt="Animation: a laptop plugs into a monitor and its windows fly to their remembered places on the monitor; unplugging brings the laptop layout back."></p>
 
 ---
 
-Roost tiles your windows as they open: no dragging, no resizing, no config files.
+## The problem
 
-It also remembers. Plug your laptop into your desk monitor and every window goes back to where
-it was the last time you sat there. Unplug for a meeting and your laptop layout comes back. Each
-combination of displays gets its own memory, and it survives restarts.
+You unplug your laptop for a meeting and every window lands in a heap. You come back, plug into
+your monitor, and spend the next minute dragging things back where they were. Every day.
+
+**Roost fixes that.** It tiles your windows as they open (no dragging, no config files), and it
+remembers the arrangement for every combination of displays. Plug in: everything goes back to the
+monitor. Unplug: your laptop layout returns. It survives restarts too.
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/screenshots/tiling.jpg" alt="Four windows tiled on a laptop: one large window on the left, three stacked on the right."></td>
+    <td width="33%"><img src="docs/screenshots/desk.jpg" alt="Laptop and monitor side by side, with windows arranged across both."></td>
+    <td width="33%"><img src="docs/screenshots/unplugged.jpg" alt="After unplugging, the laptop shows its own layout again, with a Desk / Meeting toggle."></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Tiles as windows open</b></td>
+    <td align="center"><b>Plug in: windows go home</b></td>
+    <td align="center"><b>Unplug: laptop layout returns</b></td>
+  </tr>
+</table>
+
+<sub>Illustrations from the launch video.</sub>
 
 ## What it does
 
 - **Tiles automatically.** A new window gets a place; close one and the rest fill the gap.
 - **Desk ↔ meeting memory.** Remembers the arrangement for each set of connected displays and
-  restores it when that set comes back.
+  restores it when that set comes back, even after a restart.
 - **Works with stubborn windows.** Some windows won't shrink (Chrome below 500 pt, System
   Settings below 723 pt). Roost notices, gives them the room, and remembers per app. If not
   everything fits, the windows that need the most room float instead of everything getting
@@ -30,6 +64,9 @@ combination of displays gets its own memory, and it survives restarts.
 - **Leaves alone what it should:** dialogs, sheets, panels, full-screen apps and minimised windows.
 - **Private.** Roost makes no network connections. Its only permission is Accessibility, used to
   read where windows are and move them.
+
+<p align="center"><img src="docs/screenshots/welcome.png" width="460" alt="Roost's welcome window: it explains the Accessibility permission, shows whether it's allowed yet, and lists the main keyboard shortcuts."><br>
+<sub>The first-run window walks you through the one permission Roost needs.</sub></p>
 
 ## Install
 
@@ -134,6 +171,36 @@ synced Desktop or Documents folder) adds file attributes that break code signatu
 - Resizing a tile with the mouse is undone at the next re-tile; use ⌃⌥ = and ⌃⌥ - instead.
 - Floating windows stay where they are, so they can sit on top of tiles.
 
+## FAQ
+
+**Is it safe?** Roost is open source (MIT), so every line is here to read. It makes no network
+connections and only asks for Accessibility, which macOS requires for any app that moves other
+apps' windows. It never reads window contents.
+
+**Why does macOS say it can't verify the developer?** Apple notarisation needs a paid developer
+account. Roost is free and isn't notarised yet, so the first launch needs **Open Anyway** in
+System Settings › Privacy & Security. You can also [build it yourself](#build-from-source).
+
+**How is it different from other window managers?** Roost is built around one job: remembering
+where your windows go for each combination of displays, with no setup. Open it, allow
+Accessibility, and it works: no config files, layouts or rules to write.
+
+**Does it slow my Mac down?** It sleeps until a window opens, closes or moves, then re-checks
+once. There's no polling loop.
+
+## Roadmap
+
+- Spaces awareness (keep each Space's layout)
+- Resize tiles by dragging their edges
+- Homebrew cask (`brew install --cask roost`)
+- Per-app rules (always float, always on a given display)
+
+Ideas and bug reports are welcome in [Issues](https://github.com/PriyanshMathur1/roost/issues).
+
+## Like it?
+
+⭐ **Star the repo** so others find it, and [share it on X](https://twitter.com/intent/tweet?text=Roost%3A+a+free%2C+open-source+window+tiler+for+macOS.+Unplug+for+a+meeting%2C+plug+back+in%2C+and+every+window+goes+back+to+its+place.&url=https%3A%2F%2Fgithub.com%2FPriyanshMathur1%2Froost).
+
 ## Contributing
 
 Issues and pull requests are welcome. Please run `swift run RoostCoreTests` before sending a
@@ -142,3 +209,5 @@ change, and add checks for any new layout logic.
 ## License
 
 [MIT](LICENSE) © 2026 Priyansh Mathur
+
+The launch video's music is *Talent in the Air* from [Mixkit](https://mixkit.co/free-stock-music/).
