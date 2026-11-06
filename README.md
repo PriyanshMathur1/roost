@@ -1,29 +1,103 @@
-# Roost
+<p align="center"><img src="docs/icon.png" width="128" alt="Roost icon"></p>
 
-An automatic window tiler for macOS that lives in the menu bar. Open a window and it
-gets a place; close one and the others fill the space.
+<h1 align="center">Roost</h1>
 
-See [docs/SPEC.md](docs/SPEC.md) for scope, design and the clean-room rule.
+<p align="center"><b>Your windows come home to roost.</b><br>
+A free, open-source window tiler for macOS that remembers where everything goes, on every display setup.</p>
 
-## Build and run
+---
 
-Needs the Swift 6 toolchain (Xcode Command Line Tools are enough).
+Roost tiles your windows as they open: no dragging, no resizing, no config files.
+
+It also remembers. Plug your laptop into your desk monitor and every window goes back to where
+it was the last time you sat there. Unplug for a meeting and your laptop layout comes back. Each
+combination of displays gets its own memory, and it survives restarts.
+
+## What it does
+
+- **Tiles automatically.** A new window gets a place; close one and the rest fill the gap.
+- **Desk ↔ meeting memory.** Remembers the arrangement for each set of connected displays and
+  restores it when that set comes back.
+- **Works with stubborn windows.** Some windows won't shrink (Chrome below 500 pt, System
+  Settings below 723 pt). Roost notices, gives them the room, and remembers per app. If not
+  everything fits, the windows that need the most room float instead of everything getting
+  squeezed.
+- **Never makes slivers.** No tile goes below a sensible size (300 pt by default; adjustable).
+- **Drag to rearrange.** Drop a window on another to swap them, or on another display to move it
+  there.
+- **Keyboard-first when you want it.** Focus, swap, resize and change layout with ⌃⌥ shortcuts.
+- **Four layouts per display:** main + stack, columns, rows, grid. Portrait displays get rows.
+- **Leaves alone what it should:** dialogs, sheets, panels, full-screen apps and minimised windows.
+- **Private.** Roost makes no network connections. Its only permission is Accessibility, used to
+  read where windows are and move them.
+
+## Install
+
+Roost is free and open source, and isn't notarised by Apple (that needs a paid developer
+account). So macOS asks you to confirm the first launch:
+
+1. Download **Roost-x.y.z.zip** from [Releases](../../releases/latest), unzip it, and move
+   **Roost.app** to **Applications**.
+2. Open Roost. macOS says it can't verify the developer. Click **Done**.
+3. Open **System Settings › Privacy & Security**, scroll down, and click **Open Anyway** next to
+   the Roost message. Confirm with **Open Anyway**.
+4. Roost's welcome window opens. Click **Open Accessibility Settings** and turn **Roost** on.
+   Then click **Start Tiling**.
+
+Roost lives in the menu bar (a roof over three tiles). It runs on macOS 14 Sonoma or later, on
+Apple Silicon and Intel.
+
+### Build from source
+
+Needs the Swift 6 toolchain (the Xcode Command Line Tools are enough).
 
 ```bash
-./scripts/bundle.sh          # builds ~/Applications/Roost.app
+git clone https://github.com/PriyanshMathur1/roost.git
+cd roost
+./scripts/bundle.sh            # builds ~/Applications/Roost.app
 open ~/Applications/Roost.app
 ```
 
-On first launch macOS asks for Accessibility access. Turn Roost on in
-**System Settings › Privacy & Security › Accessibility**. Tiling starts on its own
-within a couple of seconds.
+Apps you build yourself aren't quarantined, so there's no Gatekeeper step. See
+[Signing](#signing) to keep the Accessibility permission across rebuilds.
+
+## Shortcuts
+
+| Keys | Action |
+|---|---|
+| ⌃⌥ ← → ↑ ↓ | Focus the window on that side (at a screen edge: the next display) |
+| ⌃⌥⇧ ← → ↑ ↓ | Swap with the window on that side (at a screen edge: move to the next display) |
+| ⌃⌥ ↩ | Make the focused window the main one |
+| ⌃⌥ = / ⌃⌥ - | Grow / shrink the focused window |
+| ⌃⌥ 1 – 4 | Layout: main + stack, columns, rows, grid |
+| ⌃⌥ F | Float the focused window (or tile it again) |
+| ⌃⌥ T | Tiling on / off |
+
+Shortcuts another app already owns are listed as "taken" in the menu under **Keyboard Shortcuts**.
+
+## Menu
+
+Tiling on/off · layout for the display under the pointer · gap · narrowest tile · re-tile ·
+reset sizes · forget learned window sizes · keyboard shortcuts · open at login · getting started.
+
+## How it works
+
+- **`RoostCore`** is pure Swift with no AppKit: layouts, minimum-size fitting, neighbour search,
+  tile state and the display-setup memory. It has ~43,000 checks
+  (`swift run RoostCoreTests`).
+- **`Roost`** is the app: it watches apps with the Accessibility API (`AXObserver`), re-reads the
+  windows on screen after each change (so a missed event can't leave things wrong), and moves
+  windows with `AXUIElementSetAttributeValue`. Shortcuts use Carbon's `RegisterEventHotKey`,
+  which needs no extra permission.
+
+More in [docs/SPEC.md](docs/SPEC.md).
 
 ## Signing
 
-`scripts/bundle.sh` signs with a code-signing certificate named **Roost Dev** when
-your login keychain has one. macOS then ties the Accessibility grant to that
-certificate and the bundle ID, so **you grant it once and rebuilds keep it**. Without
-the certificate the app is signed ad-hoc and every rebuild needs the grant again.
+`scripts/bundle.sh` signs with a code-signing certificate named **Roost Dev** if your login
+keychain has one. macOS then ties the Accessibility permission to that certificate and the bundle
+ID, so **you grant it once and rebuilds keep it**. Without one, the app is signed ad-hoc and each
+rebuild needs the permission again.
 
 To create the certificate (self-signed, valid 10 years, usable only by `codesign`):
 
@@ -47,52 +121,24 @@ security import id.p12 -k ~/Library/Keychains/login.keychain-db -P "$P" -T /usr/
 rm key.pem id.p12
 ```
 
-`security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`; that is
-normal for a self-signed certificate and doesn't stop signing.
+`security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`; that's normal for a
+self-signed certificate and doesn't stop signing. If a permission ever goes stale, run
+`tccutil reset Accessibility com.priyansh.roost` and allow Roost again.
 
-If a grant ever goes stale (for example after switching certificates), clear it and
-allow Roost again:
+The app is built into `~/Applications` rather than the project folder because iCloud Drive (a
+synced Desktop or Documents folder) adds file attributes that break code signatures.
 
-```bash
-tccutil reset Accessibility com.priyansh.roost
-```
+## Known limits
 
-## Tests
-
-```bash
-swift run RoostCoreTests
-```
-
-XCTest needs a full Xcode install, so the layout engine's tests are a small
-executable that exits non-zero on failure.
-
-## Shortcuts
-
-| Keys | Action |
-|---|---|
-| ⌃⌥ ← → ↑ ↓ | Focus the window in that direction |
-| ⌃⌥⇧ ← → ↑ ↓ | Swap with the window in that direction |
-| ⌃⌥ ↩ | Make the focused window the main one |
-| ⌃⌥ = / ⌃⌥ - | Grow / shrink the focused window |
-| ⌃⌥ 1–4 | Layout: main + stack, columns, rows, grid |
-| ⌃⌥ F | Float the focused window (or tile it again) |
-| ⌃⌥ T | Tiling on / off |
-
-Shortcuts another app already owns are listed as "taken" in the menu.
-
-## Layout
-
-- `Package.swift`: three targets
-- `Sources/RoostCore`: pure layout maths, navigation, tile state (no AppKit)
-- `Sources/Roost`: the app (Accessibility, hotkeys, menu bar)
-- `Tests/RoostCoreTests`: test runner
-- `scripts/bundle.sh`: packages the `.app`
-
-## Known limits (v0.1)
-
-- At most 6 tiled windows per display, and no tile narrower than the **Narrowest Tile** setting
-  (300 pt by default). Windows beyond that float where they open and join when a tile frees up.
-- Windows that won't shrink (Chrome below 500 pt, System Settings below 723 pt) are measured
-  the first time and given the room; the measurements are forgotten when Roost quits.
-- Dragging a window to another display doesn't move its tile there yet. Float it (⌃⌥F), move it, then tile it again.
 - Windows on other Spaces drop out of the layout and rejoin at the end when you come back.
+- Resizing a tile with the mouse is undone at the next re-tile; use ⌃⌥ = and ⌃⌥ - instead.
+- Floating windows stay where they are, so they can sit on top of tiles.
+
+## Contributing
+
+Issues and pull requests are welcome. Please run `swift run RoostCoreTests` before sending a
+change, and add checks for any new layout logic.
+
+## License
+
+[MIT](LICENSE) © 2026 Priyansh Mathur

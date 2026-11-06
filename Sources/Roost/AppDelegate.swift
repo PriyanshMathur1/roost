@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKeys = HotKeys()
     private var statusItem: NSStatusItem!
     private var permissionTimer: Timer?
+    private let welcome = WelcomeWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -19,10 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         registerShortcuts()
         updateIcon()
 
+        welcome.onFinish = { [weak self] in self?.settings.hasSeenWelcome = true }
+        if !settings.hasSeenWelcome || !AX.isTrusted { welcome.show() }
+
         if AX.isTrusted {
             controller.start()
         } else {
-            AX.requestTrust()
             // There is no notification for the grant, so check until it arrives.
             permissionTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] timer in
                 MainActor.assumeIsolated {
@@ -62,9 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         let active = controller.isEnabled && AX.isTrusted
-        let image = NSImage(systemSymbolName: "rectangle.split.2x2", accessibilityDescription: "Roost")
-        image?.isTemplate = true
-        button.image = image
+        button.image = Brand.menuBarIcon()
         button.appearsDisabled = !active
         button.toolTip = active ? "Roost: tiling \(controller.tiledCount) windows" : "Roost: paused"
     }
@@ -82,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.state = controller.isEnabled ? .on : .off
         menu.addItem(toggle)
         menu.addItem(disabled("\(controller.tiledCount) tiled · \(controller.floatingCount) floating"))
+        let setups = controller.rememberedSetups
+        menu.addItem(disabled(setups == 1 ? "Remembers 1 display setup" : "Remembers \(setups) display setups"))
         menu.addItem(.separator())
 
         let displays = Display.all()
@@ -120,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(tileItem)
         menu.addItem(item("Re-tile Now", #selector(retile)))
         menu.addItem(item("Reset Sizes", #selector(resetSizes)))
+        menu.addItem(item("Forget Learned Window Sizes", #selector(forgetSizes)))
 
         let keys = NSMenu()
         for label in hotKeys.registered { keys.addItem(disabled(label)) }
@@ -132,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let login = item("Open at Login", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
+        menu.addItem(item("Getting Started…", #selector(showWelcome)))
         menu.addItem(item("Quit Roost", #selector(quit), key: "q"))
     }
 
@@ -151,6 +156,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func retile() { controller.reconcile() }
     @objc private func resetSizes() { controller.resetSizes() }
     @objc private func quit() { NSApp.terminate(nil) }
+    @objc private func forgetSizes() { controller.forgetLearnedSizes() }
+    @objc private func showWelcome() { welcome.show() }
 
     @objc private func chooseLayout(_ sender: NSMenuItem) {
         guard let pair = sender.representedObject as? [String], let kind = LayoutKind(rawValue: pair[0]) else { return }

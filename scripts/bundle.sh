@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.2.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 # The app is assembled outside the project: iCloud Drive (the Desktop and Documents
 # folders, when synced) adds Finder and file-provider attributes to bundles, which breaks
@@ -17,12 +17,23 @@ APP_DIR="${ROOST_APP_DIR:-$HOME/Applications}"
 APP="$APP_DIR/Roost.app"
 mkdir -p "$APP_DIR"
 
-swift build -c release --product Roost
-BIN="$(swift build -c release --show-bin-path)/Roost"
+# A universal binary (Apple Silicon + Intel). `swift build --arch a --arch b` needs full Xcode,
+# so build each architecture on its own and join them. UNIVERSAL=0 builds for this Mac only.
+if [ "${UNIVERSAL:-1}" = "1" ]; then
+    for ARCH in arm64 x86_64; do
+        swift build -c release --product Roost --triple "$ARCH-apple-macosx14.0"
+    done
+    BIN="$(mktemp -d)/Roost"
+    lipo -create .build/arm64-apple-macosx/release/Roost .build/x86_64-apple-macosx/release/Roost -output "$BIN"
+else
+    swift build -c release --product Roost
+    BIN="$(swift build -c release --show-bin-path)/Roost"
+fi
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Roost"
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -33,6 +44,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>Roost</string>
     <key>CFBundleDisplayName</key><string>Roost</string>
     <key>CFBundleExecutable</key><string>Roost</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>

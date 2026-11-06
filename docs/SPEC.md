@@ -1,45 +1,40 @@
-# Roost: core tiler spec (v0.1)
+# Roost: spec (v0.2)
 
-A macOS menu-bar app that tiles windows automatically: a new window gets a place,
-a closed one leaves no gap.
+A macOS menu-bar app that tiles windows automatically and remembers where they go for each set
+of connected displays.
 
 ## Clean-room rule
 
-Roost is written from scratch. Its sources are Apple's public documentation
-(Accessibility `AXUIElement`/`AXObserver`, Carbon `RegisterEventHotKey`,
-`NSWorkspace`, `NSStatusItem`, `SMAppService`) and our own design.
+Roost is written from scratch, from Apple's public documentation (Accessibility
+`AXUIElement`/`AXObserver`, Carbon `RegisterEventHotKey`, `NSWorkspace`, `NSStatusItem`,
+`SMAppService`) and our own design. Don't paste code, strings, names, icons or layouts from
+closed-source products into this repo.
 
-Shoji (shojimac.com) inspired the product category. Its terms forbid
-decompiling or reverse engineering it, so nothing here is derived from its
-binary, its website code or its text. Do not paste code, strings, names,
-icons or layouts from Shoji or any other closed product into this repo.
-
-## Scope of v0.1
+## Behaviour
 
 | Area | Behaviour |
 |---|---|
-| Auto-tiling | Standard windows of regular apps are tiled on the display that holds their centre. A new window is appended; a closed, minimised or hidden window is removed and the rest re-flow. |
-| Skipped windows | Anything whose subrole is not `AXStandardWindow` (dialogs, sheets, panels, palettes), native full-screen windows, minimised windows, and windows the user floats. |
-| Layouts | `main` (one large window left, others stacked right), `columns`, `rows`, `grid` (near-square grid; the last row widens to fill). Chosen per display. Portrait displays use `rows` when `columns` is selected. |
-| Capacity | Up to `maxTiles` (default 6) windows per display; extra windows are left floating where they are. |
-| Gaps | One outer and inner gap value (default 8 pt). |
-| Keyboard | Prefix ⌃⌥: arrows focus the neighbour; ⇧+arrows swap with it; Return makes the focused window main; `1`–`4` pick a layout; `-`/`=` shrink/grow the focused window's share; `F` floats/unfloats the focused window; `T` toggles tiling. |
-| Menu bar | Tiling on/off, layout for the display under the pointer, re-tile now, gap size, launch at login, Accessibility status, quit. |
-| Permissions | Prompts for Accessibility on launch and waits, polling, until it is granted. |
-
-## Out of scope for v0.1
-
-Stacks/tabs, learned minimum sizes, per-app float rules UI, drag-to-swap with the
-mouse, mouse resizing of splits, Spaces awareness beyond "on-screen windows only",
-licensing, auto-update.
+| Auto-tiling | Standard windows of regular apps are tiled on the display that holds their centre. New windows are added; closed, minimised or hidden ones are removed and the rest re-flow. |
+| Skipped windows | Anything whose subrole isn't `AXStandardWindow` (dialogs, sheets, panels), native full-screen windows, minimised windows, and windows the user floats (⌃⌥F). Each skip is logged once with its reason. |
+| Layouts | `main` (one large window left, others stacked right), `columns`, `rows`, `grid`. Per display. Portrait displays use `rows` when `columns` is chosen. |
+| Minimum sizes | When a window comes out bigger than its tile, that size is its minimum. The layout gives it the room, taking it from windows that can spare it. Learned per window and per app (saved across restarts). |
+| Fitting | Every tile is at least the Narrowest Tile setting (300 pt wide, ~165 pt tall by default) when more than one window is tiled. Up to 6 tiles per display. When not everything fits, the main window stays and the rest are added smallest-minimum first; the windows needing the most room float. Windows left out are retried after new minimums are learned. |
+| Desk ↔ meeting memory | After each change, the window order per display is saved for the current display setup (the set of connected displays), in memory and on disk (by app + title). When a setup is connected again, its windows go back to their saved displays in saved order; other windows keep their current display. After a restart, windows are matched by app and title, then by app. |
+| Dragging | A move that isn't Roost's own is a drag; on mouse-up: dropped on another tile of the same display → swap; on another display → move there, at the tile it was dropped on; elsewhere → back to its tile. |
+| Keyboard | ⌃⌥ arrows focus; ⌃⌥⇧ arrows swap (at a display edge: move to the next display); ⌃⌥↩ promote; ⌃⌥=/- grow/shrink; ⌃⌥1–4 layout; ⌃⌥F float; ⌃⌥T on/off. |
+| First run | A welcome window explains the one permission with live status, and the keys to start with. |
+| Privacy | No network access. |
 
 ## Architecture
 
-- `RoostCore` (pure Swift, no AppKit): `Rect`, `LayoutKind`, `Layout.frames`,
-  `Navigation.neighbor`, `TileState` (ordered window list + per-window weights).
-- `Roost` (app): `AXWindow` (attribute access), `WindowTracker` (observers,
-  events), `TilingController` (state per display, applies frames), `HotKeys`,
-  `StatusMenu`, `AppDelegate`.
+- `RoostCore` (pure Swift, no AppKit, tested by `swift run RoostCoreTests`):
+  `Rect`/`Size`, `Layout.fit` (layouts with minimum sizes), `Navigation` (neighbours, drop
+  targets), `TileState` (per-display window order, weights, fitting), `Arrangement` +
+  `DisplaySetup` (desk ↔ meeting memory).
+- `Roost` (app): `AXWindow` (Accessibility access), `WindowTracker` (observers; any event
+  schedules one debounced re-read of the windows on screen), `TilingController` (state per
+  display, applying frames, learning minimums, drags, memory), `HotKeys`, `AppDelegate` (menu),
+  `WelcomeWindow`, `Brand` (the mark and icon), `Settings` (UserDefaults).
 
-Coordinates in `RoostCore` are "top-left global" points, the same space
-Accessibility uses: origin at the top-left of the primary display, y down.
+Coordinates in `RoostCore` are "top-left global" points, the space Accessibility uses: origin at
+the top-left of the primary display, y down.
