@@ -39,7 +39,7 @@ public struct Rect: Equatable, Hashable, CustomStringConvertible, Sendable {
 }
 
 /// A width and height in points.
-public struct Size: Equatable, Hashable, Sendable {
+public struct Size: Equatable, Hashable, Codable, Sendable {
     public var w: Double
     public var h: Double
 

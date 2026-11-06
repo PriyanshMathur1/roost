@@ -1,7 +1,7 @@
 #!/bin/bash
-# Builds Tessera in release mode and wraps it in build/Tessera.app.
+# Builds Roost in release mode and wraps it in build/Roost.app.
 #
-# Signing: if a code-signing certificate named "Tessera Dev" (or $SIGN_IDENTITY) is in
+# Signing: if a code-signing certificate named "Roost Dev" (or $SIGN_IDENTITY) is in
 # your keychain, the app is signed with it. macOS then ties the Accessibility grant to
 # that certificate and the bundle ID, so the grant survives rebuilds. Without one the
 # app is signed ad-hoc, and every rebuild needs the grant again. See README › Signing.
@@ -13,26 +13,26 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)
 # The app is assembled outside the project: iCloud Drive (the Desktop and Documents
 # folders, when synced) adds Finder and file-provider attributes to bundles, which breaks
 # their code signature.
-APP_DIR="${TESSERA_APP_DIR:-$HOME/Applications}"
-APP="$APP_DIR/Tessera.app"
+APP_DIR="${ROOST_APP_DIR:-$HOME/Applications}"
+APP="$APP_DIR/Roost.app"
 mkdir -p "$APP_DIR"
 
-swift build -c release --product Tessera
-BIN="$(swift build -c release --show-bin-path)/Tessera"
+swift build -c release --product Roost
+BIN="$(swift build -c release --show-bin-path)/Roost"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Tessera"
+cp "$BIN" "$APP/Contents/MacOS/Roost"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>com.priyansh.tessera</string>
-    <key>CFBundleName</key><string>Tessera</string>
-    <key>CFBundleDisplayName</key><string>Tessera</string>
-    <key>CFBundleExecutable</key><string>Tessera</string>
+    <key>CFBundleIdentifier</key><string>com.priyansh.roost</string>
+    <key>CFBundleName</key><string>Roost</string>
+    <key>CFBundleDisplayName</key><string>Roost</string>
+    <key>CFBundleExecutable</key><string>Roost</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
@@ -44,7 +44,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-IDENTITY="${SIGN_IDENTITY:-Tessera Dev}"
+IDENTITY="${SIGN_IDENTITY:-Roost Dev}"
 if security find-identity -p codesigning | grep -q "\"$IDENTITY\""; then
     SIGN_WITH="$IDENTITY"
 else
@@ -53,6 +53,6 @@ else
 fi
 # Extended attributes (Finder info, quarantine, provenance) make codesign refuse the bundle.
 xattr -cr "$APP"
-codesign --force --sign "$SIGN_WITH" --identifier com.priyansh.tessera --options runtime "$APP"
+codesign --force --sign "$SIGN_WITH" --identifier com.priyansh.roost --options runtime "$APP"
 codesign --verify --strict "$APP"
 echo "Built $APP (version $VERSION, build $BUILD_NUMBER, signed: ${SIGN_WITH/#-/ad-hoc})"

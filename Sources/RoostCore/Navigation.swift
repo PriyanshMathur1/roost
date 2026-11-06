@@ -1,4 +1,9 @@
 public enum Navigation {
+    /// The index of the frame containing the point, skipping `excluding`, or nil.
+    public static func index(containing x: Double, _ y: Double, frames: [Rect], excluding: Int? = nil) -> Int? {
+        frames.indices.first { $0 != excluding && frames[$0].contains(x: x, y: y) }
+    }
+
     /// The index of the frame that is the best neighbour of `frames[index]` in `direction`,
     /// or nil when there is none.
     ///

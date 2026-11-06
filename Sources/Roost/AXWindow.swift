@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import TesseraCore
+import RoostCore
 
 /// A window of another app, reached through the Accessibility API.
 /// Equality and hashing use `CFEqual`/`CFHash`, which identify the same window
@@ -16,6 +16,12 @@ struct WindowRef: Hashable, CustomStringConvertible {
         let app = NSRunningApplication(processIdentifier: pid)?.localizedName ?? "pid \(pid)"
         return "\(app) “\(AX.string(element, kAXTitleAttribute) ?? "")”"
     }
+
+    /// The app's bundle ID, used to remember things about an app across restarts.
+    var appID: String { NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "pid-\(pid)" }
+
+    /// How this window can be recognised after a restart.
+    var tag: WindowTag { WindowTag(app: appID, title: AX.string(element, kAXTitleAttribute) ?? "") }
 
     // MARK: State
 
@@ -71,7 +77,7 @@ struct WindowRef: Hashable, CustomStringConvertible {
 /// Thin, typed helpers over the C Accessibility API.
 enum AX {
     /// How long one call to an app may take before we give up on it, so a hung app
-    /// can't freeze Tessera.
+    /// can't freeze Roost.
     static let messagingTimeout: Float = 0.4
 
     static func application(_ pid: pid_t) -> AXUIElement {

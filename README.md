@@ -1,4 +1,4 @@
-# Tessera
+# Roost
 
 An automatic window tiler for macOS that lives in the menu bar. Open a window and it
 gets a place; close one and the others fill the space.
@@ -10,17 +10,17 @@ See [docs/SPEC.md](docs/SPEC.md) for scope, design and the clean-room rule.
 Needs the Swift 6 toolchain (Xcode Command Line Tools are enough).
 
 ```bash
-./scripts/bundle.sh          # builds ~/Applications/Tessera.app
-open ~/Applications/Tessera.app
+./scripts/bundle.sh          # builds ~/Applications/Roost.app
+open ~/Applications/Roost.app
 ```
 
-On first launch macOS asks for Accessibility access. Turn Tessera on in
+On first launch macOS asks for Accessibility access. Turn Roost on in
 **System Settings › Privacy & Security › Accessibility**. Tiling starts on its own
 within a couple of seconds.
 
 ## Signing
 
-`scripts/bundle.sh` signs with a code-signing certificate named **Tessera Dev** when
+`scripts/bundle.sh` signs with a code-signing certificate named **Roost Dev** when
 your login keychain has one. macOS then ties the Accessibility grant to that
 certificate and the bundle ID, so **you grant it once and rebuilds keep it**. Without
 the certificate the app is signed ad-hoc and every rebuild needs the grant again.
@@ -28,21 +28,21 @@ the certificate the app is signed ad-hoc and every rebuild needs the grant again
 To create the certificate (self-signed, valid 10 years, usable only by `codesign`):
 
 ```bash
-cat > /tmp/tessera-cert.cfg <<'CFG'
+cat > /tmp/roost-cert.cfg <<'CFG'
 [req]
 distinguished_name = dn
 x509_extensions = ext
 prompt = no
 [dn]
-CN = Tessera Dev
+CN = Roost Dev
 [ext]
 basicConstraints = critical,CA:false
 keyUsage = critical,digitalSignature
 extendedKeyUsage = critical,codeSigning
 CFG
 cd "$(mktemp -d)" && P=$(openssl rand -hex 12)
-openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 -config /tmp/tessera-cert.cfg
-openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Tessera Dev" -out id.p12 -passout pass:$P
+openssl req -x509 -newkey rsa:2048 -nodes -keyout key.pem -out cert.pem -days 3650 -config /tmp/roost-cert.cfg
+openssl pkcs12 -export -inkey key.pem -in cert.pem -name "Roost Dev" -out id.p12 -passout pass:$P
 security import id.p12 -k ~/Library/Keychains/login.keychain-db -P "$P" -T /usr/bin/codesign
 rm key.pem id.p12
 ```
@@ -51,16 +51,16 @@ rm key.pem id.p12
 normal for a self-signed certificate and doesn't stop signing.
 
 If a grant ever goes stale (for example after switching certificates), clear it and
-allow Tessera again:
+allow Roost again:
 
 ```bash
-tccutil reset Accessibility com.priyansh.tessera
+tccutil reset Accessibility com.priyansh.roost
 ```
 
 ## Tests
 
 ```bash
-swift run TesseraCoreTests
+swift run RoostCoreTests
 ```
 
 XCTest needs a full Xcode install, so the layout engine's tests are a small
@@ -83,9 +83,9 @@ Shortcuts another app already owns are listed as "taken" in the menu.
 ## Layout
 
 - `Package.swift`: three targets
-- `Sources/TesseraCore`: pure layout maths, navigation, tile state (no AppKit)
-- `Sources/Tessera`: the app (Accessibility, hotkeys, menu bar)
-- `Tests/TesseraCoreTests`: test runner
+- `Sources/RoostCore`: pure layout maths, navigation, tile state (no AppKit)
+- `Sources/Roost`: the app (Accessibility, hotkeys, menu bar)
+- `Tests/RoostCoreTests`: test runner
 - `scripts/bundle.sh`: packages the `.app`
 
 ## Known limits (v0.1)
@@ -93,6 +93,6 @@ Shortcuts another app already owns are listed as "taken" in the menu.
 - At most 6 tiled windows per display, and no tile narrower than the **Narrowest Tile** setting
   (300 pt by default). Windows beyond that float where they open and join when a tile frees up.
 - Windows that won't shrink (Chrome below 500 pt, System Settings below 723 pt) are measured
-  the first time and given the room; the measurements are forgotten when Tessera quits.
+  the first time and given the room; the measurements are forgotten when Roost quits.
 - Dragging a window to another display doesn't move its tile there yet. Float it (⌃⌥F), move it, then tile it again.
 - Windows on other Spaces drop out of the layout and rejoin at the end when you come back.

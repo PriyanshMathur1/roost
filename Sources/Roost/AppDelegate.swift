@@ -1,6 +1,6 @@
 import AppKit
 import ServiceManagement
-import TesseraCore
+import RoostCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -62,11 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func updateIcon() {
         guard let button = statusItem?.button else { return }
         let active = controller.isEnabled && AX.isTrusted
-        let image = NSImage(systemSymbolName: "rectangle.split.2x2", accessibilityDescription: "Tessera")
+        let image = NSImage(systemSymbolName: "rectangle.split.2x2", accessibilityDescription: "Roost")
         image?.isTemplate = true
         button.image = image
         button.appearsDisabled = !active
-        button.toolTip = active ? "Tessera: tiling \(controller.tiledCount) windows" : "Tessera: paused"
+        button.toolTip = active ? "Roost: tiling \(controller.tiledCount) windows" : "Roost: paused"
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -74,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if !AX.isTrusted {
             menu.addItem(item("Grant Accessibility Access…", #selector(openAccessibilitySettings)))
-            menu.addItem(disabled("Tessera needs it to move windows."))
+            menu.addItem(disabled("Roost needs it to move windows."))
             menu.addItem(.separator())
         }
 
@@ -132,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let login = item("Open at Login", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
-        menu.addItem(item("Quit Tessera", #selector(quit), key: "q"))
+        menu.addItem(item("Quit Roost", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {

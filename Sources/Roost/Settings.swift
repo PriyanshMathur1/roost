@@ -1,5 +1,5 @@
 import Foundation
-import TesseraCore
+import RoostCore
 
 /// User preferences, stored in UserDefaults.
 struct Settings {
@@ -34,6 +34,33 @@ struct Settings {
     var maxTiles: Int {
         get { max(defaults.integer(forKey: "maxTiles"), 1) }
         nonmutating set { defaults.set(max(newValue, 1), forKey: "maxTiles") }
+    }
+
+    var hasSeenWelcome: Bool {
+        get { defaults.bool(forKey: "hasSeenWelcome") }
+        nonmutating set { defaults.set(newValue, forKey: "hasSeenWelcome") }
+    }
+
+    /// The smallest size each app's windows accepted, by bundle ID, so tiling is right from
+    /// the first second after a restart.
+    var appMinSizes: [String: Size] {
+        get { decode([String: Size].self, forKey: "appMinSizes") ?? [:] }
+        nonmutating set { encode(newValue, forKey: "appMinSizes") }
+    }
+
+    /// Where windows were for each display setup (by `DisplaySetup.id`): display → windows.
+    var arrangements: [String: [String: [WindowTag]]] {
+        get { decode([String: [String: [WindowTag]]].self, forKey: "arrangements") ?? [:] }
+        nonmutating set { encode(newValue, forKey: "arrangements") }
+    }
+
+    private func decode<T: Decodable>(_ type: T.Type, forKey key: String) -> T? {
+        guard let data = defaults.data(forKey: key) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private func encode<T: Encodable>(_ value: T, forKey key: String) {
+        if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key) }
     }
 
     /// Layout per display, keyed by display UUID. Displays without a choice use `.main`.

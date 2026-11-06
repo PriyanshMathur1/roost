@@ -1,7 +1,7 @@
 // A small test runner: XCTest and Swift Testing are not available without a full
-// Xcode install. Run with `swift run TesseraCoreTests`; it exits 1 if anything fails.
+// Xcode install. Run with `swift run RoostCoreTests`; it exits 1 if anything fails.
 import Foundation
-import TesseraCore
+import RoostCore
 
 var failures = 0
 var checks = 0
@@ -406,6 +406,103 @@ test("when not all fit, tile as many as possible (seen on screen after a restart
     expect(Set(dropped) == ["chrome", "settings"], "the two biggest float: \(dropped)")
     expect(s.windows == ["passwords", "t1", "t2", "t3", "t4"], "order kept, main stays: \(s.windows)")
     expect(s.fits(in: macbook, gap: 8, minSizes: mins))
+}
+
+// MARK: Desk ↔ meeting memory
+
+test("a display setup is the same whatever order displays are listed in") {
+    expect(DisplaySetup(["laptop", "desk"]) == DisplaySetup(["desk", "laptop"]))
+    expect(DisplaySetup(["laptop", "desk", "laptop"]).displays == ["desk", "laptop"])
+    expect(DisplaySetup(["laptop"]).id == "laptop" && DisplaySetup(["b", "a"]).id == "a+b")
+}
+
+test("plugging back in: windows return to the desk monitor in their old order") {
+    // At the desk: mail + notes on the laptop, browser/editor/terminal on the monitor.
+    let saved = ["laptop": ["mail", "notes"], "desk": ["browser", "editor", "terminal"]]
+    // After a meeting on the laptop alone, macOS had piled everything onto the laptop.
+    let current = ["laptop": ["editor", "mail", "browser", "notes", "terminal"], "desk": [String]()]
+    let all: Set = ["mail", "notes", "browser", "editor", "terminal"]
+    let r = Arrangement.restore(saved: saved, current: current, present: all)
+    expect(r["laptop"] == ["mail", "notes"], "\(r)")
+    expect(r["desk"] == ["browser", "editor", "terminal"], "\(r)")
+}
+
+test("windows opened in the meantime keep their place; closed ones are skipped") {
+    let saved = ["laptop": ["mail"], "desk": ["browser", "editor"]]
+    // "editor" was closed during the meeting; "slides" was opened.
+    let current = ["laptop": ["slides", "browser", "mail"], "desk": [String]()]
+    let r = Arrangement.restore(saved: saved, current: current, present: ["slides", "browser", "mail"])
+    expect(r["laptop"] == ["mail", "slides"], "restored first, then the new one: \(r)")
+    expect(r["desk"] == ["browser"], "\(r)")
+}
+
+test("saved displays that aren't connected are ignored; each window placed once") {
+    let saved = ["laptop": ["a", "b"], "projector": ["c"], "desk": ["a"]]
+    let current = ["laptop": ["c"], "desk": ["b"]]
+    let r = Arrangement.restore(saved: saved, current: current, present: ["a", "b", "c"])
+    expect(Set(r.keys) == ["laptop", "desk"], "\(r)")
+    let all = r.values.flatMap { $0 }
+    expect(all.count == 3 && Set(all) == ["a", "b", "c"], "every window exactly once: \(r)")
+    expect(r["desk"]?.first == "a", "displays are filled in name order, so desk claims a first: \(r)")
+}
+
+test("unplugging to the laptop: everything that was on the laptop comes back first") {
+    let saved = ["laptop": ["slides", "notes"]]
+    let current = ["laptop": ["browser", "notes", "slides", "terminal"]]
+    let r = Arrangement.restore(saved: saved, current: current, present: ["browser", "notes", "slides", "terminal"])
+    expect(r["laptop"] == ["slides", "notes", "browser", "terminal"], "\(r)")
+}
+
+test("after a restart, windows are matched by app and title, then by app") {
+    let saved = [
+        "laptop": [WindowTag(app: "com.apple.mail", title: "Inbox")],
+        "desk": [WindowTag(app: "com.google.Chrome", title: "Docs"), WindowTag(app: "com.google.Chrome", title: "Jira"),
+                 WindowTag(app: "com.apple.Terminal", title: "zsh")],
+    ]
+    let present: [(id: Int, tag: WindowTag)] = [
+        (1, WindowTag(app: "com.google.Chrome", title: "Gmail")),  // title changed (new tab)
+        (2, WindowTag(app: "com.google.Chrome", title: "Jira")),   // exact
+        (3, WindowTag(app: "com.apple.mail", title: "Inbox")),     // exact
+        (4, WindowTag(app: "com.apple.Notes", title: "Notes")),    // not saved
+    ]
+    let r = Arrangement.resolve(saved, present: present)
+    expect(r["laptop"] == [3], "\(r)")
+    expect(r["desk"] == [1, 2], "exact match keeps its slot, the other Chrome fills the first: \(r)")
+}
+
+test("resolve never uses a window twice") {
+    let tag = WindowTag(app: "x", title: "same")
+    let r = Arrangement.resolve(["a": [tag, tag, tag], "b": [tag]], present: [(1, tag), (2, tag)])
+    let all = r.values.flatMap { $0 }
+    expect(all.sorted() == [1, 2], "\(r)")
+}
+
+// MARK: Dragging between tiles and displays
+
+test("insert at an index, clamped; no duplicates; capacity respected") {
+    var s = TileState<String>(maxTiles: 3)
+    s.insert("a"); s.insert("b")
+    expect(s.insert("x", at: 1) && s.windows == ["a", "x", "b"], "\(s.windows)")
+    expect(!s.insert("y", at: 0), "full")
+    expect(s.insert("y", at: 99, overCapacity: true) && s.windows.last == "y")
+    expect(!s.insert("a", at: 0, overCapacity: true), "duplicate")
+    var e = TileState<String>()
+    expect(e.insert("z", at: -5) && e.windows == ["z"])
+}
+
+test("finding the tile under a drop point") {
+    let f = [Rect(x: 0, y: 0, w: 100, h: 100), Rect(x: 100, y: 0, w: 100, h: 100)]
+    expect(Navigation.index(containing: 150, 50, frames: f) == 1)
+    expect(Navigation.index(containing: 50, 50, frames: f, excluding: 0) == nil, "the dragged window itself doesn't count")
+    expect(Navigation.index(containing: 500, 50, frames: f) == nil)
+}
+
+test("the display next door, for moving a window across screens") {
+    // Laptop below-left, monitor to the right and a little higher.
+    let laptop = Rect(x: 0, y: 38, w: 1710, h: 974), monitor = Rect(x: 1710, y: -200, w: 2560, h: 1400)
+    expect(Navigation.neighbor(of: 0, direction: .right, frames: [laptop, monitor]) == 1)
+    expect(Navigation.neighbor(of: 1, direction: .left, frames: [laptop, monitor]) == 0)
+    expect(Navigation.neighbor(of: 0, direction: .left, frames: [laptop, monitor]) == nil)
 }
 
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")

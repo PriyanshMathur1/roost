@@ -16,12 +16,12 @@ final class HotKeys {
     private(set) var failed: [String] = []
     private(set) var registered: [String] = []
 
-    private let log = Logger(subsystem: "com.priyansh.tessera", category: "hotkeys")
+    private let log = Logger(subsystem: "com.priyansh.roost", category: "hotkeys")
     private var actions: [UInt32: () -> Void] = [:]
     private var refs: [EventHotKeyRef] = []
     private var handler: EventHandlerRef?
     private var nextID: UInt32 = 1
-    private static let signature: OSType = 0x5453_5352 // "TSSR"
+    private static let signature: OSType = 0x524F_5354 // "ROST"
 
     init() {
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))

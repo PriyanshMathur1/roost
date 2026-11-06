@@ -10,8 +10,10 @@ import os
 @MainActor
 final class WindowTracker {
     var onChange: (() -> Void)?
+    /// A window moved: by the user dragging it, by its app, or by Roost itself.
+    var onWindowMoved: ((WindowRef) -> Void)?
 
-    private let log = Logger(subsystem: "com.priyansh.tessera", category: "tracker")
+    private let log = Logger(subsystem: "com.priyansh.roost", category: "tracker")
     private var observers: [pid_t: AXObserver] = [:]
     private var watchedWindows: Set<WindowRef> = []
     private var pending: DispatchWorkItem?
@@ -29,6 +31,7 @@ final class WindowTracker {
         kAXUIElementDestroyedNotification,
         kAXWindowMiniaturizedNotification,
         kAXWindowDeminiaturizedNotification,
+        kAXWindowMovedNotification,
     ]
 
     func start() {
@@ -60,7 +63,7 @@ final class WindowTracker {
         }
     }
 
-    /// Regular, visible apps other than Tessera itself.
+    /// Regular, visible apps other than Roost itself.
     static func isTileable(_ app: NSRunningApplication) -> Bool {
         app.activationPolicy == .regular && app.processIdentifier != ProcessInfo.processInfo.processIdentifier
     }
@@ -162,9 +165,18 @@ final class WindowTracker {
     }
 
     /// Runs on the main run loop, where the observer sources were added.
-    private static let callback: AXObserverCallback = { _, _, _, refcon in
+    private static let callback: AXObserverCallback = { _, element, notification, refcon in
         guard let refcon else { return }
         let tracker = Unmanaged<WindowTracker>.fromOpaque(refcon).takeUnretainedValue()
-        MainActor.assumeIsolated { tracker.changed() }
+        let moved = (notification as String) == kAXWindowMovedNotification
+        var pid: pid_t = 0
+        if moved { AXUIElementGetPid(element, &pid) }
+        MainActor.assumeIsolated {
+            if moved {
+                tracker.onWindowMoved?(WindowRef(element: element, pid: pid))
+            } else {
+                tracker.changed()
+            }
+        }
     }
 }

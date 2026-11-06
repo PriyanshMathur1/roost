@@ -1,11 +1,11 @@
-# Tessera: core tiler spec (v0.1)
+# Roost: core tiler spec (v0.1)
 
 A macOS menu-bar app that tiles windows automatically: a new window gets a place,
 a closed one leaves no gap.
 
 ## Clean-room rule
 
-Tessera is written from scratch. Its sources are Apple's public documentation
+Roost is written from scratch. Its sources are Apple's public documentation
 (Accessibility `AXUIElement`/`AXObserver`, Carbon `RegisterEventHotKey`,
 `NSWorkspace`, `NSStatusItem`, `SMAppService`) and our own design.
 
@@ -35,11 +35,11 @@ licensing, auto-update.
 
 ## Architecture
 
-- `TesseraCore` (pure Swift, no AppKit): `Rect`, `LayoutKind`, `Layout.frames`,
+- `RoostCore` (pure Swift, no AppKit): `Rect`, `LayoutKind`, `Layout.frames`,
   `Navigation.neighbor`, `TileState` (ordered window list + per-window weights).
-- `Tessera` (app): `AXWindow` (attribute access), `WindowTracker` (observers,
+- `Roost` (app): `AXWindow` (attribute access), `WindowTracker` (observers,
   events), `TilingController` (state per display, applies frames), `HotKeys`,
   `StatusMenu`, `AppDelegate`.
 
-Coordinates in `TesseraCore` are "top-left global" points, the same space
+Coordinates in `RoostCore` are "top-left global" points, the same space
 Accessibility uses: origin at the top-left of the primary display, y down.

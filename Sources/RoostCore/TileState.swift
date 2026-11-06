@@ -35,6 +35,14 @@ public struct TileState<ID: Hashable>: Equatable {
         return true
     }
 
+    /// Inserts a window at `index` (clamped to the list), e.g. where it was dropped.
+    @discardableResult
+    public mutating func insert(_ id: ID, at index: Int, overCapacity: Bool = false) -> Bool {
+        guard !contains(id), overCapacity || !isFull else { return false }
+        windows.insert(id, at: min(max(index, 0), windows.count))
+        return true
+    }
+
     @discardableResult
     public mutating func remove(_ id: ID) -> Bool {
         guard let i = index(of: id) else { return false }

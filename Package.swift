@@ -2,15 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tessera",
+    name: "Roost",
     platforms: [.macOS(.v14)],
     targets: [
         // Pure layout and tiling state: no AppKit, fully testable.
-        .target(name: "TesseraCore"),
+        .target(name: "RoostCore"),
         // The menu-bar app: Accessibility window control, hotkeys, status item.
         .executableTarget(
-            name: "Tessera",
-            dependencies: ["TesseraCore"],
+            name: "Roost",
+            dependencies: ["RoostCore"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("ApplicationServices"),
@@ -19,7 +19,7 @@ let package = Package(
             ]
         ),
         // XCTest and Swift Testing need a full Xcode install, so the tests are a
-        // plain executable: `swift run TesseraCoreTests` exits non-zero on failure.
-        .executableTarget(name: "TesseraCoreTests", dependencies: ["TesseraCore"], path: "Tests/TesseraCoreTests"),
+        // plain executable: `swift run RoostCoreTests` exits non-zero on failure.
+        .executableTarget(name: "RoostCoreTests", dependencies: ["RoostCore"], path: "Tests/RoostCoreTests"),
     ]
 )

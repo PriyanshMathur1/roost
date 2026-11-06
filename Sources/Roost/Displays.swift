@@ -1,5 +1,5 @@
 import AppKit
-import TesseraCore
+import RoostCore
 
 /// A connected display, with its usable area (without menu bar and Dock) in the
 /// top-left global coordinates Accessibility uses.
