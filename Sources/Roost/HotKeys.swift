@@ -60,7 +60,7 @@ final class HotKeys {
     enum Key {
         static let left = kVK_LeftArrow, right = kVK_RightArrow, up = kVK_UpArrow, down = kVK_DownArrow
         static let returnKey = kVK_Return, minus = kVK_ANSI_Minus, equal = kVK_ANSI_Equal
-        static let f = kVK_ANSI_F, t = kVK_ANSI_T
+        static let f = kVK_ANSI_F, t = kVK_ANSI_T, tab = kVK_Tab
         static let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4]
     }
 

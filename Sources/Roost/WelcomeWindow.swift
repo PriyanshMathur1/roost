@@ -93,6 +93,7 @@ final class WelcomeWindow: NSObject, NSWindowDelegate {
             ["⌃⌥ ↩", "Make the focused window the big one"],
             ["⌃⌥ 1 – 4", "Layout: main + stack, columns, rows, grid"],
             ["⌃⌥ F", "Float a window, or tile it again"],
+            ["⌃⌥ ⇥", "Next window waiting in this tile"],
         ].map { [label($0[0], size: 12, weight: .medium, mono: true), label($0[1], size: 12, color: .secondaryLabelColor)] })
         keys.rowSpacing = 6
         keys.columnSpacing = 16

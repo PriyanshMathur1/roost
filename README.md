@@ -14,7 +14,7 @@ A free, open-source window tiler for macOS that remembers where everything goes,
 </p>
 
 <p align="center">
-  <a href="https://github.com/PriyanshMathur1/roost/releases/latest/download/Roost-0.2.0.zip"><b>⬇ Download for macOS</b></a>
+  <a href="https://github.com/PriyanshMathur1/roost/releases/latest/download/Roost.zip"><b>⬇ Download for macOS</b></a>
   &nbsp;·&nbsp;
   <a href="https://github.com/PriyanshMathur1/roost/releases/download/v0.2.0/Roost-launch-video.mp4"><b>▶ Watch the 30-second video</b></a>
 </p>
@@ -57,6 +57,8 @@ monitor. Unplug: your laptop layout returns. It survives restarts too.
   everything fits, the windows that need the most room float instead of everything getting
   squeezed.
 - **Never makes slivers.** No tile goes below a sensible size (300 pt by default; adjustable).
+- **Never piles windows on top of each other.** When more windows are open than fit, the extras
+  wait neatly behind a tile. Bring one forward (Dock, ⌘-Tab or ⌃⌥Tab) and it shows in that tile.
 - **Drag to rearrange.** Drop a window on another to swap them, or on another display to move it
   there.
 - **Keyboard-first when you want it.** Focus, swap, resize and change layout with ⌃⌥ shortcuts.
@@ -108,6 +110,7 @@ Apps you build yourself aren't quarantined, so there's no Gatekeeper step. See
 | ⌃⌥ = / ⌃⌥ - | Grow / shrink the focused window |
 | ⌃⌥ 1 – 4 | Layout: main + stack, columns, rows, grid |
 | ⌃⌥ F | Float the focused window (or tile it again) |
+| ⌃⌥ ⇥ | Show the next window waiting behind this tile |
 | ⌃⌥ T | Tiling on / off |
 
 Shortcuts another app already owns are listed as "taken" in the menu under **Keyboard Shortcuts**.
@@ -169,7 +172,7 @@ synced Desktop or Documents folder) adds file attributes that break code signatu
 
 - Windows on other Spaces drop out of the layout and rejoin at the end when you come back.
 - Resizing a tile with the mouse is undone at the next re-tile; use ⌃⌥ = and ⌃⌥ - instead.
-- Floating windows stay where they are, so they can sit on top of tiles.
+- A window too big for every tile (rare) is centred on its display at its minimum size.
 
 ## FAQ
 
@@ -205,6 +208,20 @@ Ideas and bug reports are welcome in [Issues](https://github.com/PriyanshMathur1
 
 Issues and pull requests are welcome. Please run `swift run RoostCoreTests` before sending a
 change, and add checks for any new layout logic.
+
+### Testing on a real Mac
+
+`scripts/repro/` has end-to-end checks that drive the running app and exit non-zero on failure:
+native tabs, extra windows stacking, tile order staying stable, minimise/restore and drag-and-drop.
+They read a state dump that Roost writes only when asked:
+
+```bash
+defaults write com.priyansh.roost debugState -bool true   # writes ~/Library/Logs/Roost/state.json
+swiftc -O scripts/repro/roostctl.swift -o /tmp/roostctl  # sends debug commands (minimise, drop, …)
+ROOSTCTL=/tmp/roostctl ./scripts/repro/drag-drop.sh
+```
+
+The same state dump is the most useful thing to attach to a bug report.
 
 ## License
 
