@@ -317,7 +317,7 @@ test("minimum tile: the 5-window case from the real screen keeps 3, none below 3
     for id in ["chrome", "settings", "te1", "te2", "te3"] { s.insert(id) }
     let mins = ["chrome": Size(w: 500, h: 0), "settings": Size(w: 723, h: 0)]
     let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: mins)
-    expect(dropped == ["te3", "te2"], "newest go first: \(dropped)")
+    expect(dropped == ["te2", "te3"], "the two that no longer fit: \(dropped)")
     expect(s.windows == ["chrome", "settings", "te1"], "\(s.windows)")
     let f = s.frames(in: macbook, gap: 8, minSizes: mins)
     expect(f.allSatisfy { $0.frame.w >= 299 }, "\(f)")
@@ -345,6 +345,31 @@ test("no minimum tile means the old behaviour") {
     var s = TileState<Int>(kind: .columns, maxTiles: 10)
     for id in 0..<6 { s.insert(id) }
     expect(s.trimToFit(in: macbook, gap: 8, minSizes: [:]).isEmpty && s.count == 6)
+}
+
+test("one window too wide for the stack doesn't push out the windows after it (seen on screen)") {
+    // Main + stack: Chrome is main; System Settings needs 723 pt but the stack is ~674 pt.
+    var s = TileState<String>(kind: .main, minTile: Size(w: 300, h: 165))
+    for id in ["chrome", "settings", "te1", "te2"] { s.insert(id) }
+    let mins = ["chrome": Size(w: 0, h: 375), "settings": Size(w: 723, h: 470)]
+    // With Chrome at least 963 pt (its share), Settings still fits at 723 — so force the
+    // real case: main can't give up that much room.
+    let tight = mins.merging(["chrome": Size(w: 1012, h: 375)]) { $1 }
+    let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: tight)
+    expect(dropped == ["settings"], "only Settings should float: \(dropped)")
+    expect(s.windows == ["chrome", "te1", "te2"], "\(s.windows)")
+    expect(s.fits(in: macbook, gap: 8, minSizes: tight))
+}
+
+test("trimToFit keeps order and leaves fitting states alone") {
+    var s = TileState<Int>(kind: .columns, maxTiles: 10, minTile: Size(w: 300, h: 0))
+    for id in 0..<4 { s.insert(id) }
+    expect(s.trimToFit(in: macbook, gap: 8, minSizes: [:]).isEmpty && s.count == 4)
+    // A huge window in the middle is skipped; later small ones stay.
+    for id in 4..<6 { s.insert(id) }
+    let dropped = s.trimToFit(in: macbook, gap: 8, minSizes: [1: Size(w: 1500, h: 0)])
+    expect(dropped.contains(1) && s.windows.first == 0, "\(dropped) \(s.windows)")
+    expect(s.windows == s.windows.sorted(), "order kept: \(s.windows)")
 }
 
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")

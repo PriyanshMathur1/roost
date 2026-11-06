@@ -89,9 +89,13 @@ public struct TileState<ID: Hashable>: Equatable {
     }
 
     public func params(gap: Double, minSizes: [ID: Size] = [:]) -> LayoutParams {
-        let floor = windows.count > 1 ? minTile : .zero
-        return LayoutParams(gap: gap, mainRatio: mainRatio, weights: windows.map { weights[$0] ?? 1 },
-                            minSizes: windows.map { id in
+        params(for: windows, gap: gap, minSizes: minSizes)
+    }
+
+    private func params(for list: [ID], gap: Double, minSizes: [ID: Size]) -> LayoutParams {
+        let floor = list.count > 1 ? minTile : .zero
+        return LayoutParams(gap: gap, mainRatio: mainRatio, weights: list.map { weights[$0] ?? 1 },
+                            minSizes: list.map { id in
                                 let own = minSizes[id] ?? .zero
                                 return Size(w: max(own.w, floor.w), h: max(own.h, floor.h))
                             })
@@ -107,18 +111,30 @@ public struct TileState<ID: Hashable>: Equatable {
     }
 
     public func fits(in screen: Rect, gap: Double, minSizes: [ID: Size]) -> Bool {
-        Layout.fit(count: windows.count, in: screen, kind: kind, params: params(gap: gap, minSizes: minSizes)) != nil
+        fits(windows, in: screen, gap: gap, minSizes: minSizes)
     }
 
-    /// Takes windows off the end of the list, newest first, until the rest fit at their
-    /// minimum sizes. One window always stays. Returns the windows taken off.
+    private func fits(_ list: [ID], in screen: Rect, gap: Double, minSizes: [ID: Size]) -> Bool {
+        Layout.fit(count: list.count, in: screen, kind: kind, params: params(for: list, gap: gap, minSizes: minSizes)) != nil
+    }
+
+    /// Keeps as many windows as fit at their minimum sizes. Windows are taken in order and
+    /// each is kept if it still fits alongside the ones kept so far, so one window that can't
+    /// fit (say, too wide for the stack) is skipped without taking later windows with it.
+    /// The first window always stays. Returns the windows taken out, in order.
     @discardableResult
     public mutating func trimToFit(in screen: Rect, gap: Double, minSizes: [ID: Size]) -> [ID] {
+        guard !fits(in: screen, gap: gap, minSizes: minSizes) else { return [] }
+        var kept: [ID] = []
         var removed: [ID] = []
-        while windows.count > 1, !fits(in: screen, gap: gap, minSizes: minSizes), let last = windows.last {
-            remove(last)
-            removed.append(last)
+        for id in windows {
+            if kept.isEmpty || fits(kept + [id], in: screen, gap: gap, minSizes: minSizes) {
+                kept.append(id)
+            } else {
+                removed.append(id)
+            }
         }
+        for id in removed { remove(id) }
         return removed
     }
 
