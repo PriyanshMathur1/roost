@@ -1,16 +1,21 @@
 #!/bin/bash
 # Builds Tessera in release mode and wraps it in build/Tessera.app.
 #
-# Signing is ad-hoc ("-"). macOS ties the Accessibility grant of an ad-hoc signed app
-# to this exact build, so after every rebuild you have to switch Tessera off and on
-# again in System Settings › Privacy & Security › Accessibility. A Developer ID
-# certificate (paid Apple developer account) removes that step.
+# Signing: if a code-signing certificate named "Tessera Dev" (or $SIGN_IDENTITY) is in
+# your keychain, the app is signed with it. macOS then ties the Accessibility grant to
+# that certificate and the bundle ID, so the grant survives rebuilds. Without one the
+# app is signed ad-hoc, and every rebuild needs the grant again. See README › Signing.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
-APP="build/Tessera.app"
+# The app is assembled outside the project: iCloud Drive (the Desktop and Documents
+# folders, when synced) adds Finder and file-provider attributes to bundles, which breaks
+# their code signature.
+APP_DIR="${TESSERA_APP_DIR:-$HOME/Applications}"
+APP="$APP_DIR/Tessera.app"
+mkdir -p "$APP_DIR"
 
 swift build -c release --product Tessera
 BIN="$(swift build -c release --show-bin-path)/Tessera"
@@ -39,6 +44,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-codesign --force --sign - --identifier com.priyansh.tessera --options runtime "$APP"
+IDENTITY="${SIGN_IDENTITY:-Tessera Dev}"
+if security find-identity -p codesigning | grep -q "\"$IDENTITY\""; then
+    SIGN_WITH="$IDENTITY"
+else
+    SIGN_WITH="-"
+    echo "No \"$IDENTITY\" certificate found: signing ad-hoc (the Accessibility grant won't survive the next rebuild)."
+fi
+# Extended attributes (Finder info, quarantine, provenance) make codesign refuse the bundle.
+xattr -cr "$APP"
+codesign --force --sign "$SIGN_WITH" --identifier com.priyansh.tessera --options runtime "$APP"
 codesign --verify --strict "$APP"
-echo "Built $APP (version $VERSION, build $BUILD_NUMBER)"
+echo "Built $APP (version $VERSION, build $BUILD_NUMBER, signed: ${SIGN_WITH/#-/ad-hoc})"
