@@ -22,6 +22,8 @@ final class TilingController {
     /// Windows left floating because there was no room for another tile. They are tried
     /// again on every re-check, so they join as soon as a tile frees up.
     private var overflow: Set<WindowRef> = []
+    /// Windows already reported as not fitting, so each is logged once, not on every re-check.
+    private var reportedOverflow: Set<WindowRef> = []
     /// The frame Roost last gave each tiled window, to tell its own moves from the user's.
     private var placed: [WindowRef: Rect] = [:]
     /// Windows that moved while a mouse button was down: a drag in progress.
@@ -70,6 +72,7 @@ final class TilingController {
         floating.formIntersection(present)
         minSizes = minSizes.filter { present.contains($0.key) }
         placed = placed.filter { present.contains($0.key) }
+        reportedOverflow.formIntersection(present)
         overflow = []
 
         // Forget displays that went away (their windows are picked up again below,
@@ -185,8 +188,12 @@ final class TilingController {
         for window in trimmed {
             overflow.insert(window)
             placed[window] = nil
-            log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
+            if reportedOverflow.insert(window).inserted {
+                log.info("\(window.description, privacy: .public) doesn't fit on \(display.name, privacy: .public); left floating")
+            }
         }
+        // A window that has a tile again may be reported again if it later stops fitting.
+        reportedOverflow.subtract(state.windows)
         states[display.key] = state
 
         let targets = state.frames(in: display.visible, gap: gap, minSizes: mins)
