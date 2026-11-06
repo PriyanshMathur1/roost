@@ -5,6 +5,8 @@
 <p align="center"><b>Your windows come home to roost.</b><br>
 A free, open-source window tiler for macOS that remembers where everything goes, on every display setup.</p>
 
+<p align="center"><img src="docs/demo.gif" width="800" alt="Animation: a laptop plugs into a monitor and its windows fly to their remembered places on the monitor; unplugging brings the laptop layout back."></p>
+
 ---
 
 Roost tiles your windows as they open: no dragging, no resizing, no config files.
