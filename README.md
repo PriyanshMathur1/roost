@@ -60,7 +60,9 @@ monitor. Unplug: your laptop layout returns. It survives restarts too.
 - **Never piles windows on top of each other.** When more windows are open than fit, the extras
   wait neatly behind a tile. Bring one forward (Dock, ⌘-Tab or ⌃⌥Tab) and it shows in that tile.
 - **Drag to rearrange.** Drop a window on another to swap them, or on another display to move it
-  there.
+  there. **Drag a tile's edge** to resize it, and the other tiles make room.
+- **Keeps your place across Spaces.** Windows on another Space, minimised, or in a hidden app keep
+  their tile; when they come back, they return to it instead of the end of the line.
 - **Keyboard-first when you want it.** Focus, swap, resize and change layout with ⌃⌥ shortcuts.
 - **Four layouts per display:** main + stack, columns, rows, grid. Portrait displays get rows.
 - **Leaves alone what it should:** dialogs, sheets, panels, full-screen apps and minimised windows.
@@ -170,8 +172,7 @@ synced Desktop or Documents folder) adds file attributes that break code signatu
 
 ## Known limits
 
-- Windows on other Spaces drop out of the layout and rejoin at the end when you come back.
-- Resizing a tile with the mouse is undone at the next re-tile; use ⌃⌥ = and ⌃⌥ - instead.
+- In the grid layout tiles have no individual sizes, so dragging an edge there snaps back.
 - A window too big for every tile (rare) is centred on its display at its minimum size.
 
 ## FAQ
@@ -193,10 +194,10 @@ once. There's no polling loop.
 
 ## Roadmap
 
-- Spaces awareness (keep each Space's layout)
-- Resize tiles by dragging their edges
-- Homebrew cask (`brew install --cask roost`)
+- Saved setups: name an arrangement ("Deep work", "Standup") and switch with one shortcut
 - Per-app rules (always float, always on a given display)
+- Automatic updates
+- Homebrew cask (`brew install --cask roost`)
 
 Ideas and bug reports are welcome in [Issues](https://github.com/PriyanshMathur1/roost/issues).
 
@@ -212,7 +213,8 @@ change, and add checks for any new layout logic.
 ### Testing on a real Mac
 
 `scripts/repro/` has end-to-end checks that drive the running app and exit non-zero on failure:
-native tabs, extra windows stacking, tile order staying stable, minimise/restore and drag-and-drop.
+native tabs, extra windows stacking, tile order staying stable, minimise/restore, drag-and-drop,
+windows keeping their place while away, and resizing a tile by its edge.
 They read a state dump that Roost writes only when asked:
 
 ```bash

@@ -1,5 +1,5 @@
 // Sends a debug command to a running Roost (only obeyed while debugState is on).
-// Usage: roostctl <minimise|restore|drop|login-on|login-off> [window title] [x y]
+// Usage: roostctl <minimise|restore|drop|resize|layout|login-on|login-off> [window title or layout] [x y | width height]
 import Foundation
 let a = CommandLine.arguments
 guard a.count >= 2 else { print("usage: roostctl action [title] [x y]"); exit(2) }

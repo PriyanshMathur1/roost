@@ -12,6 +12,8 @@ final class WindowTracker {
     var onChange: (() -> Void)?
     /// A window moved: by the user dragging it, by its app, or by Roost itself.
     var onWindowMoved: ((WindowRef) -> Void)?
+    /// A window changed size (by the user dragging an edge, or by its app).
+    var onWindowResized: ((WindowRef) -> Void)?
     /// A window was closed (macOS sent its destroy notification).
     var onWindowDestroyed: ((WindowRef) -> Void)?
 
@@ -34,6 +36,7 @@ final class WindowTracker {
         kAXWindowMiniaturizedNotification,
         kAXWindowDeminiaturizedNotification,
         kAXWindowMovedNotification,
+        kAXWindowResizedNotification,
     ]
 
     func start() {
@@ -172,12 +175,15 @@ final class WindowTracker {
         let tracker = Unmanaged<WindowTracker>.fromOpaque(refcon).takeUnretainedValue()
         let name = notification as String
         let moved = name == kAXWindowMovedNotification
+        let resized = name == kAXWindowResizedNotification
         let destroyed = name == kAXUIElementDestroyedNotification
         var pid: pid_t = 0
-        if moved { AXUIElementGetPid(element, &pid) }
+        if moved || resized { AXUIElementGetPid(element, &pid) }
         MainActor.assumeIsolated {
             if moved {
                 tracker.onWindowMoved?(WindowRef(element: element, pid: pid))
+            } else if resized {
+                tracker.onWindowResized?(WindowRef(element: element, pid: pid))
             } else {
                 // A destroyed element can't be asked for its pid; match it against the windows
                 // being watched (CFEqual still identifies it).

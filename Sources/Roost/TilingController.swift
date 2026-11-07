@@ -32,6 +32,8 @@ final class TilingController {
     /// Windows that moved while a mouse button was down: a drag in progress.
     private var dragged: Set<WindowRef> = []
     private var dragCheck: DispatchWorkItem?
+    /// Windows the user changed with the mouse button down (a drag or an edge resize).
+    private var mouseDragged: Set<WindowRef> = []
     /// Where windows were for each display setup this session (desk ↔ meeting memory).
     private var memory: [DisplaySetup: [String: [WindowRef]]] = [:]
     /// Windows that can be tiled right now (this Space, not minimised, app not hidden).
@@ -48,6 +50,12 @@ final class TilingController {
         appMinSizes = settings.appMinSizes
         tracker.onChange = { [weak self] in self?.reconcile() }
         tracker.onWindowMoved = { [weak self] in self?.windowMoved($0) }
+        tracker.onWindowResized = { [weak self] window in
+            // Only a resize made with the mouse is the user's; an app refusing a size is
+            // handled by size learning (reacting here would loop: ask, refuse, ask…).
+            guard Self.mouseIsDown else { return }
+            self?.windowMoved(window)
+        }
         tracker.onWindowDestroyed = { [weak self] in self?.closed.insert($0) }
     }
 
@@ -196,6 +204,15 @@ final class TilingController {
             guard let w = target, let f = w.frame, let x = Double(info["x"] ?? ""), let y = Double(info["y"] ?? "") else { return }
             w.setFrame(Rect(x: x - f.w / 2, y: y - f.h / 2, w: f.w, h: f.h))
             dropped(w, pointerOverride: (x, y))
+        case "resize":
+            guard let w = target, let f = w.frame, let width = Double(info["x"] ?? ""), let height = Double(info["y"] ?? "") else { return }
+            w.setFrame(Rect(x: f.x, y: f.y, w: width, h: height))
+            mouseDragged.insert(w)
+            dropped(w)
+        case "reset-sizes":
+            resetSizes()
+        case "layout":
+            if let kind = LayoutKind(rawValue: title), let key = Display.all().first?.key { setLayout(kind, displayKey: key) }
         case "login-on": try? SMAppService.mainApp.register()
         case "login-off": try? SMAppService.mainApp.unregister()
         default: break
@@ -345,6 +362,7 @@ final class TilingController {
     private func windowMoved(_ window: WindowRef) {
         guard started, settings.enabled, let target = placed[window] else { return }
         if let frame = window.frame, frame.isClose(to: target) { return }
+        if Self.mouseIsDown { mouseDragged.insert(window) }
         dragged.insert(window)
         scheduleDropCheck()
     }
@@ -375,6 +393,18 @@ final class TilingController {
         guard let from = states.first(where: { $0.value.contains(window) })?.key,
               let frame = window.frame,
               let to = Display.containing(x: frame.midX, y: frame.midY, in: displays) else { return reconcile() }
+        // An edge dragged with the mouse (the size changed, not just the place): adopt the new
+        // size as the tile's share and re-tile the rest around it.
+        if mouseDragged.remove(window) != nil, let target = placed[window],
+           abs(frame.w - target.w) > 4 || abs(frame.h - target.h) > 4,
+           let display = displays.first(where: { $0.key == from }) {
+            var shown = states[from]!.visible(present)
+            if shown.adopt(window, userFrame: frame, in: display.visible, gap: settings.gap) {
+                states[from]!.takeSizes(from: shown)
+                log.info("Resized \(window.description, privacy: .public): the tiles follow")
+            }
+            return reapply(displayKeys: [from])
+        }
         let pointer = pointerOverride ?? Self.pointerInAXSpace() ?? (frame.midX, frame.midY)
 
         let gap = settings.gap

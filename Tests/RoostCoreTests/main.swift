@@ -608,5 +608,79 @@ test("resizing and swapping while a window is away carry into the visible layout
     expect(f[0].id == "c" && f[0].frame.w > f[1].frame.w, "c keeps its bigger share: \(f)")
 }
 
+// MARK: Resizing a tile by dragging its edge
+
+test("dragging the main window wider moves the main/stack split to match") {
+    var s = TileState<String>(kind: .main)
+    for id in ["main", "a", "b"] { s.insert(id) }
+    let before = s.frames(in: macbook, gap: 8)
+    var dragged = before[0].frame
+    dragged.w = 1200                                  // user pulled the right edge
+    expect(s.adopt("main", userFrame: dragged, in: macbook, gap: 8))
+    let after = s.frames(in: macbook, gap: 8)
+    expect(abs(after[0].frame.w - 1200) <= 1, "main is now \(after[0].frame.w)")
+    expect(after[1].frame.minX - after[0].frame.maxX == 8 && after[1].frame.maxX == 1702, "the stack fills the rest: \(after)")
+}
+
+test("dragging a stack window narrower widens main; taller takes more of the stack") {
+    var s = TileState<String>(kind: .main)
+    for id in ["main", "a", "b", "c"] { s.insert(id) }
+    var a = s.frames(in: macbook, gap: 8)[1].frame
+    a.x += 200; a.w -= 200                              // left edge pulled right
+    expect(s.adopt("a", userFrame: a, in: macbook, gap: 8))
+    var f = s.frames(in: macbook, gap: 8)
+    expect(abs(f[1].frame.w - a.w) <= 1, "stack now \(f[1].frame.w), wanted \(a.w)")
+    var b = f[2].frame
+    b.h = 500                                           // bottom edge pulled down
+    expect(s.adopt("b", userFrame: b, in: macbook, gap: 8))
+    f = s.frames(in: macbook, gap: 8)
+    expect(abs(f[2].frame.h - 500) <= 2, "b is \(f[2].frame.h) tall")
+    expect(f[3].frame.maxY == 1004, "the stack still fills the column: \(f)")
+}
+
+test("columns and rows take the dragged width or height; grid has nothing to adopt") {
+    var cols = TileState<String>(kind: .columns)
+    for id in ["a", "b", "c"] { cols.insert(id) }
+    var b = cols.frames(in: macbook, gap: 8)[1].frame
+    b.w = 800
+    expect(cols.adopt("b", userFrame: b, in: macbook, gap: 8))
+    let fc = cols.frames(in: macbook, gap: 8)
+    expect(abs(fc[1].frame.w - 800) <= 2 && fc[2].frame.maxX == 1702, "\(fc)")
+
+    var rows = TileState<String>(kind: .rows)
+    for id in ["a", "b"] { rows.insert(id) }
+    var a = rows.frames(in: macbook, gap: 8)[0].frame
+    a.h = 300
+    expect(rows.adopt("a", userFrame: a, in: macbook, gap: 8))
+    expect(abs(rows.frames(in: macbook, gap: 8)[0].frame.h - 300) <= 2)
+
+    var grid = TileState<String>(kind: .grid)
+    for id in ["a", "b", "c"] { grid.insert(id) }
+    var g = grid.frames(in: macbook, gap: 8)[0].frame
+    g.w += 200
+    expect(!grid.adopt("a", userFrame: g, in: macbook, gap: 8))
+}
+
+test("an extreme drag is clamped to sensible limits") {
+    var s = TileState<String>(kind: .main)
+    for id in ["main", "a"] { s.insert(id) }
+    var m = s.frames(in: macbook, gap: 8)[0].frame
+    m.w = 1690
+    s.adopt("main", userFrame: m, in: macbook, gap: 8)
+    expect(s.mainRatio == LayoutParams.mainRatioRange.upperBound, "\(s.mainRatio)")
+}
+
+test("a resize made on the visible layout is kept by the full list (an away window in between)") {
+    var full = TileState<String>(kind: .columns)
+    for id in ["a", "away", "b"] { full.insert(id) }
+    var shown = full.visible(["a", "b"])
+    var a = shown.frames(in: macbook, gap: 8)[0].frame
+    a.w = 1100
+    shown.adopt("a", userFrame: a, in: macbook, gap: 8)
+    full.takeSizes(from: shown)
+    expect(abs(full.visible(["a", "b"]).frames(in: macbook, gap: 8)[0].frame.w - 1100) <= 2)
+    expect(full.windows == ["a", "away", "b"], "order untouched")
+}
+
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)
