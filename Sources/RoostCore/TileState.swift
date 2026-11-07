@@ -35,6 +35,15 @@ public struct TileState<ID: Hashable>: Equatable {
         return true
     }
 
+    /// The same state with only `present` windows, in their usual order and with their sizes:
+    /// what to lay out right now. Windows that are away (another Space, minimised, hidden)
+    /// keep their place in `self` for when they come back.
+    public func visible(_ present: Set<ID>) -> TileState {
+        var copy = self
+        copy.windows = windows.filter { present.contains($0) }
+        return copy
+    }
+
     /// Inserts a window at `index` (clamped to the list), e.g. where it was dropped.
     @discardableResult
     public mutating func insert(_ id: ID, at index: Int, overCapacity: Bool = false) -> Bool {

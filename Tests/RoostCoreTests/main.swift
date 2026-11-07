@@ -586,5 +586,27 @@ test("a window that fits no tile floats at its minimum, not at a stale full-scre
     expect(Stacking.floatingSize(minimum: Size(w: 0, h: 600), current: Size(w: 800, h: 700), display: display) == Size(w: 800, h: 600))
 }
 
+// MARK: Windows that are away (another Space, minimised, hidden) keep their place
+
+test("only visible windows are laid out; an away window keeps its place for when it returns") {
+    var s = TileState<String>(kind: .columns)
+    for id in ["a", "b", "c"] { s.insert(id) }
+    let now = s.visible(["a", "c"])           // b is on another Space
+    expect(now.windows == ["a", "c"], "\(now.windows)")
+    expect(s.windows == ["a", "b", "c"], "the full order is kept")
+    expect(s.visible(["a", "b", "c"]).windows == ["a", "b", "c"], "b comes back to its own place")
+}
+
+test("resizing and swapping while a window is away carry into the visible layout") {
+    var s = TileState<String>(kind: .columns)
+    for id in ["a", "b", "c"] { s.insert(id) }
+    s.resize("c", grow: true)
+    s.swap("a", "c")                           // b is away the whole time
+    let now = s.visible(["a", "c"])
+    expect(now.windows == ["c", "a"], "\(now.windows)")
+    let f = now.frames(in: macbook, gap: 8)
+    expect(f[0].id == "c" && f[0].frame.w > f[1].frame.w, "c keeps its bigger share: \(f)")
+}
+
 print(failures == 0 ? "OK: \(checks) checks passed" : "FAILED: \(failures) of \(checks) checks")
 exit(failures == 0 ? 0 : 1)

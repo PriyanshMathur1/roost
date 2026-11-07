@@ -34,6 +34,12 @@ final class TilingController {
     private var dragCheck: DispatchWorkItem?
     /// Where windows were for each display setup this session (desk ↔ meeting memory).
     private var memory: [DisplaySetup: [String: [WindowRef]]] = [:]
+    /// Windows that can be tiled right now (this Space, not minimised, app not hidden).
+    /// Others stay in their display's list, keeping their place, until they come back.
+    private var present: Set<WindowRef> = []
+    /// Windows macOS reported destroyed since the last re-check.
+    private var closed: Set<WindowRef> = []
+    private var tiledNow: [String: Int] = [:]
     private var lastSetup: DisplaySetup?
     private var started = false
 
@@ -42,6 +48,7 @@ final class TilingController {
         appMinSizes = settings.appMinSizes
         tracker.onChange = { [weak self] in self?.reconcile() }
         tracker.onWindowMoved = { [weak self] in self?.windowMoved($0) }
+        tracker.onWindowDestroyed = { [weak self] in self?.closed.insert($0) }
     }
 
     func start() {
@@ -71,21 +78,26 @@ final class TilingController {
         let displays = Display.all()
         let byKey = Dictionary(displays.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         let windows = tracker.tileableWindows()
-        let present = Set(windows)
-        floating.formIntersection(present)
-        minSizes = minSizes.filter { present.contains($0.key) }
+        present = Set(windows)
+        // A window missing from the list may only be away (another Space, minimised, app
+        // hidden, full screen). Forget it only once it's closed or its app has quit.
+        let running = Set(NSWorkspace.shared.runningApplications.filter { !$0.isTerminated }.map(\.processIdentifier))
+        let alive = { (w: WindowRef) in running.contains(w.pid) && !self.closed.contains(w) }
+        floating = floating.filter(alive)
+        minSizes = minSizes.filter { alive($0.key) }
         placed = placed.filter { present.contains($0.key) }
         reportedOverflow.formIntersection(present)
         overflow = []
 
         // Forget displays that went away (their windows are picked up again below,
-        // on whichever display now holds them), and windows that are gone.
+        // on whichever display now holds them), and windows that are closed.
         states = states.filter { byKey[$0.key] != nil }
         for key in states.keys {
-            for id in states[key]!.windows where !present.contains(id) {
+            for id in states[key]!.windows where !alive(id) {
                 states[key]!.remove(id)
             }
         }
+        closed = []
         for display in displays where states[display.key] == nil {
             states[display.key] = newState(for: display.key)
         }
@@ -148,9 +160,11 @@ final class TilingController {
         }
 
         let plan = Arrangement.restore(saved: saved, current: current, present: Set(windows))
+        // Windows that are away right now keep their place on the display they were on.
+        let away = states.mapValues { $0.windows.filter { !present.contains($0) } }
         for (key, list) in plan {
             var state = newState(for: key)
-            for window in list { state.insert(window, overCapacity: true) }
+            for window in list + (away[key] ?? []) { state.insert(window, overCapacity: true) }
             states[key] = state
         }
         log.notice("Restored the window arrangement for \(setup.displays.count) display(s)")
@@ -201,8 +215,10 @@ final class TilingController {
         }
         let displays = Display.all().map { d -> [String: Any] in
             let state = states[d.key]
+            let shown = (state?.visible(present).windows ?? []).filter { !overflow.contains($0) }
+            let away = (state?.windows ?? []).filter { !present.contains($0) }
             return ["display": d.name, "visible": [d.visible.x, d.visible.y, d.visible.w, d.visible.h],
-                    "layout": state?.kind.rawValue ?? "", "tiles": (state?.windows ?? []).map(entry)]
+                    "layout": state?.kind.rawValue ?? "", "tiles": shown.map(entry), "away": away.map(entry)]
         }
         let login: String
         switch SMAppService.mainApp.status {
@@ -249,7 +265,8 @@ final class TilingController {
     /// room comes from windows that can spare it. If they can't all fit, the windows needing
     /// the most room are left floating where they are.
     private func apply(_ display: Display, knownFrames: [WindowRef: Rect?] = [:], pass: Int = 0) {
-        guard var state = states[display.key] else { return }
+        // Lay out only what's visible now; the full list keeps away windows in their places.
+        guard var state = states[display.key]?.visible(present) else { return }
         let gap = settings.gap
         let mins = knownMinimums(for: state.windows)
         let trimmed = state.trimToFit(in: display.visible, gap: gap, minSizes: mins)
@@ -261,7 +278,7 @@ final class TilingController {
         }
         // A window that has a tile again may be reported again if it later stops fitting.
         reportedOverflow.subtract(state.windows)
-        states[display.key] = state
+        tiledNow[display.key] = state.count
 
         let tiles = state.frames(in: display.visible, gap: gap, minSizes: mins)
         let homes = Stacking.homes(for: trimmed, tiles: tiles, minSizes: knownMinimums(for: trimmed))
@@ -306,11 +323,8 @@ final class TilingController {
         // report a different size each time.
         guard pass < 3 else { return }
         // What was left out was judged with what we knew then. Now that minimums are known,
-        // other windows may have dropped out instead and freed a place: try them again.
-        for window in trimmed {
-            overflow.remove(window)
-            states[display.key]?.insert(window, overCapacity: true)
-        }
+        // other windows may have dropped out instead and freed a place: work it out again.
+        for window in trimmed { overflow.remove(window) }
         apply(display, pass: pass + 1)
     }
 
@@ -364,7 +378,7 @@ final class TilingController {
         let pointer = pointerOverride ?? Self.pointerInAXSpace() ?? (frame.midX, frame.midY)
 
         let gap = settings.gap
-        guard let targetState = states[to.key] else { return reconcile() }
+        guard let targetState = states[to.key]?.visible(present) else { return reconcile() }
         let tiles = targetState.frames(in: to.visible, gap: gap, minSizes: knownMinimums(for: targetState.windows))
         let hit = Navigation.index(containing: pointer.0, pointer.1, frames: tiles.map(\.frame),
                                    excluding: tiles.firstIndex { $0.id == window })
@@ -376,7 +390,10 @@ final class TilingController {
             reapply(displayKeys: [from])
         } else {
             states[from]!.remove(window)
-            states[to.key]!.insert(window, at: hit ?? states[to.key]!.count, overCapacity: true)
+            // Insert before the window it was dropped on (positions in the full list, which
+            // also holds windows that are away).
+            let index = hit.flatMap { states[to.key]!.index(of: tiles[$0].id) } ?? states[to.key]!.count
+            states[to.key]!.insert(window, at: index, overCapacity: true)
             log.info("Moved \(window.description, privacy: .public) to \(to.name, privacy: .public)")
             reapply(displayKeys: [from, to.key])
         }
@@ -400,7 +417,7 @@ final class TilingController {
 
     func focus(_ direction: Direction) {
         guard let (window, key, display) = focusedTile() else { return NSSound.beep() }
-        if let next = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap,
+        if let next = states[key]?.visible(present).neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap,
                                             minSizes: knownMinimums(for: states[key]!.windows)) {
             return next.focus()
         }
@@ -414,7 +431,7 @@ final class TilingController {
     /// the next display that way.
     func swap(_ direction: Direction) {
         guard let (window, key, display) = focusedTile() else { return NSSound.beep() }
-        if let other = states[key]?.neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap,
+        if let other = states[key]?.visible(present).neighbor(of: window, direction: direction, in: display.visible, gap: settings.gap,
                                              minSizes: knownMinimums(for: states[key]!.windows)),
            states[key]?.swap(window, other) == true {
             return reapply(displayKeys: [key])
@@ -508,7 +525,7 @@ final class TilingController {
         group[(i + 1) % group.count].focus()
     }
 
-    var tiledCount: Int { states.values.reduce(0) { $0 + $1.count } }
+    var tiledCount: Int { tiledNow.values.reduce(0, +) }
     var stackedCount: Int { overflow.count }
     var floatingCount: Int { floating.count }
     var rememberedSetups: Int { settings.arrangements.count }
