@@ -35,6 +35,15 @@ public struct TileState<ID: Hashable>: Equatable {
         return true
     }
 
+    /// The same state with only `present` windows, in their usual order and with their sizes:
+    /// what to lay out right now. Windows that are away (another Space, minimised, hidden)
+    /// keep their place in `self` for when they come back.
+    public func visible(_ present: Set<ID>) -> TileState {
+        var copy = self
+        copy.windows = windows.filter { present.contains($0) }
+        return copy
+    }
+
     /// Inserts a window at `index` (clamped to the list), e.g. where it was dropped.
     @discardableResult
     public mutating func insert(_ id: ID, at index: Int, overCapacity: Bool = false) -> Bool {
@@ -90,6 +99,52 @@ public struct TileState<ID: Hashable>: Equatable {
             weights[id] = next
             return true
         }
+    }
+
+    /// The user resized `id` by dragging an edge to `userFrame`: change the split or the
+    /// window's share so the layout matches. Returns false when there's nothing to adopt.
+    @discardableResult
+    public mutating func adopt(_ id: ID, userFrame: Rect, in screen: Rect, gap: Double) -> Bool {
+        guard let i = index(of: id), windows.count > 1 else { return false }
+        let area = screen.inset(by: gap)
+        let now = frames(in: screen, gap: gap)[i].frame
+        let wider = abs(userFrame.w - now.w) > 2, taller = abs(userFrame.h - now.h) > 2
+        var changed = false
+        switch kind.effective(on: screen) {
+        case .main:
+            let usable = area.w - gap
+            if wider {
+                let mainW = i == 0 ? userFrame.w : usable - userFrame.w
+                mainRatio = (mainW / usable).clamped(to: LayoutParams.mainRatioRange)
+                changed = true
+            }
+            if taller && i > 0 && windows.count > 2 {
+                let stack = Array(windows.dropFirst())
+                changed = setShare(of: id, length: userFrame.h, among: stack, available: area.h - gap * Double(stack.count - 1)) || changed
+            }
+        case .columns:
+            if wider { changed = setShare(of: id, length: userFrame.w, among: windows, available: area.w - gap * Double(windows.count - 1)) }
+        case .rows:
+            if taller { changed = setShare(of: id, length: userFrame.h, among: windows, available: area.h - gap * Double(windows.count - 1)) }
+        case .grid:
+            return false
+        }
+        return changed
+    }
+
+    /// Takes the split and the shares of `other` (a `visible` copy that was resized).
+    public mutating func takeSizes(from other: TileState) {
+        mainRatio = other.mainRatio
+        for (id, weight) in other.weights { weights[id] = weight }
+    }
+
+    /// Sets the weight of `id` so that, sharing `available` with the other windows in `group`
+    /// by weight, it gets `length`.
+    private mutating func setShare(of id: ID, length: Double, among group: [ID], available: Double) -> Bool {
+        let others = group.filter { $0 != id }.map { weights[$0] ?? 1 }.reduce(0, +)
+        guard others > 0, length > 0, length < available else { return false }
+        weights[id] = (length * others / (available - length)).clamped(to: Self.weightRange)
+        return true
     }
 
     /// Forget every resize: equal weights and the default main share.

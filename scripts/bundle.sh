@@ -8,7 +8,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION="${VERSION:-0.2.1}"
+VERSION="${VERSION:-0.3.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || echo 1)}"
 # The app is assembled outside the project: iCloud Drive (the Desktop and Documents
 # folders, when synced) adds Finder and file-provider attributes to bundles, which breaks

@@ -12,10 +12,14 @@ final class WindowTracker {
     var onChange: (() -> Void)?
     /// A window moved: by the user dragging it, by its app, or by Roost itself.
     var onWindowMoved: ((WindowRef) -> Void)?
+    /// A window changed size (by the user dragging an edge, or by its app).
+    var onWindowResized: ((WindowRef) -> Void)?
+    /// A window was closed (macOS sent its destroy notification).
+    var onWindowDestroyed: ((WindowRef) -> Void)?
 
     private let log = Logger(subsystem: "com.priyansh.roost", category: "tracker")
     private var observers: [pid_t: AXObserver] = [:]
-    private var watchedWindows: Set<WindowRef> = []
+    fileprivate(set) var watchedWindows: Set<WindowRef> = []
     private var pending: DispatchWorkItem?
     private var workspaceTokens: [NSObjectProtocol] = []
 
@@ -32,6 +36,7 @@ final class WindowTracker {
         kAXWindowMiniaturizedNotification,
         kAXWindowDeminiaturizedNotification,
         kAXWindowMovedNotification,
+        kAXWindowResizedNotification,
     ]
 
     func start() {
@@ -86,8 +91,8 @@ final class WindowTracker {
                 watchWindow(window)
             }
         }
-        // Windows we stopped seeing no longer need their destroy notification.
-        watchedWindows.formIntersection(result)
+        // Windows we don't see right now may only be away (another Space, minimised); keep
+        // watching them so a close is still noticed. They leave the set when destroyed.
         loggedSkips = skippedNow
         return result
     }
@@ -168,13 +173,24 @@ final class WindowTracker {
     private static let callback: AXObserverCallback = { _, element, notification, refcon in
         guard let refcon else { return }
         let tracker = Unmanaged<WindowTracker>.fromOpaque(refcon).takeUnretainedValue()
-        let moved = (notification as String) == kAXWindowMovedNotification
+        let name = notification as String
+        let moved = name == kAXWindowMovedNotification
+        let resized = name == kAXWindowResizedNotification
+        let destroyed = name == kAXUIElementDestroyedNotification
         var pid: pid_t = 0
-        if moved { AXUIElementGetPid(element, &pid) }
+        if moved || resized { AXUIElementGetPid(element, &pid) }
         MainActor.assumeIsolated {
             if moved {
                 tracker.onWindowMoved?(WindowRef(element: element, pid: pid))
+            } else if resized {
+                tracker.onWindowResized?(WindowRef(element: element, pid: pid))
             } else {
+                // A destroyed element can't be asked for its pid; match it against the windows
+                // being watched (CFEqual still identifies it).
+                if destroyed, let window = tracker.watchedWindows.first(where: { CFEqual($0.element, element) }) {
+                    tracker.watchedWindows.remove(window)
+                    tracker.onWindowDestroyed?(window)
+                }
                 tracker.changed()
             }
         }
